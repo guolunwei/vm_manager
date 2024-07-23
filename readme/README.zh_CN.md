@@ -1,5 +1,5 @@
 ### Virtual Machine Management Script
-This script provides functionality to manage virtual machines (VMs) based on a template snapshot. It supports cloning, removing, starting, stopping, and setting the IP address of VMs.
+本脚本提供了基于模板快照管理虚拟机（VMs）的功能。它支持克隆、删除、启动、停止以及设置虚拟机的IP地址等操作。
 
 ### README.md
 
