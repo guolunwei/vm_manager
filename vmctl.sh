@@ -80,7 +80,7 @@ set_host_ip() {
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "nmcli connection modify eth0 ipv4.method manual ipv4.addresses $ip_addr/24 ipv4.gateway 192.168.88.254 ipv4.dns 192.168.88.254 autoconnect yes; nmcli connection up eth0"
     if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' set ip"
+        echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
     else
         echo_err "Domain '$vm_name' set ip"
         exit 1
