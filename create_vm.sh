@@ -1,8 +1,9 @@
 #!/bin/bash
+# Usage: ./create_vm.sh vm.txt
 while read -r name ip
 do
-    ./vm.sh stop "$name" &> /dev/null
-    ./vm.sh remove "$name"
-    ./vm.sh clone "$name"
-    ./vm.sh setip "$name" "$ip"
-done < ./vm.txt
+    ./vmctl.sh stop "$name" &> /dev/null
+    ./vmctl.sh remove "$name"
+    ./vmctl.sh clone "$name"
+    ./vmctl.sh setip "$name" "$ip"
+done < $1
