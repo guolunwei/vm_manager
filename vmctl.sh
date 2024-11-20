@@ -1,9 +1,13 @@
 #!/bin/bash
 
-BASE_DIR="D:\Virtual Machines"
-SRC_VMX="D:\Virtual Machines\Rocky8_nsd\Rocky8_nsd.vmx"
-SNAPSHOT="template"
-ROOTPASS="123"
+##############################################################################
+# vm manger configurations
+export BASE_DIR="D:\Virtual Machines"                                         
+export SRC_VMX="D:\Virtual Machines\RockyLinux8_cloud\RockyLinux8_cloud.vmx"  
+export SNAPSHOT="template"                                                    
+export ROOTPASS="123"                                                         
+
+##############################################################################
 
 echo_ok(){   
     echo -n "$1" 
@@ -21,6 +25,14 @@ if [ ! -f "$SRC_VMX" ]; then
     echo "Source vmx does not exist."
     exit 1
 fi
+
+list_all_vms() {
+    find "$BASE_DIR" -name "*.vmx" | awk -F [/.] '{print $(NF-1)}'
+}
+
+list_vm() {
+    vmrun list | awk -F'.' 'NR>1 {print $(NF-1)}' | awk -F'\' '{print $NF}'
+}
 
 clone_vm() {
     local vm_name="$1"
@@ -78,7 +90,7 @@ set_host_ip() {
     local vm_name="$1"
     local ip_addr="$2"
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "nmcli connection modify eth0 ipv4.method manual ipv4.addresses $ip_addr/24 ipv4.gateway 192.168.88.254 ipv4.dns 192.168.88.254 autoconnect yes; nmcli connection up eth0"
+    "nmcli connection modify eth0 ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes; nmcli connection up eth0"
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
     else
@@ -92,6 +104,7 @@ usage() {
 Usage: $0 [command] [arguments]
 
 Available commands:
+  list       List running or all VMs     $0 list [--all]
   clone      Clone one or more VMs       $0 clone <vm_name> [...]
   remove     Remove one or more VMs      $0 remove <vm_name> [...]
   start      Start one or more VMs       $0 start <vm_name> [...]
@@ -100,12 +113,24 @@ Available commands:
 
 For example:
   $0 clone web1 web2
-  $0 setip web1 192.168.1.100
+  $0 setip web1 192.168.88.100
 EOF
     exit 1
 }
 
 case $1 in
+    "list")
+    shift
+    if [ -z "$1" ]; then
+        list_vm
+        exit 0
+    elif [ "$1" == '--all' ]; then
+        list_all_vms
+        exit 0
+    else
+        usage
+    fi
+	;;
     "clone")
         if [ $# -lt 2 ]; then
             usage
