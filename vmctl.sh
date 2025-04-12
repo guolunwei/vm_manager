@@ -2,10 +2,10 @@
 
 ##############################################################################
 # vm manger configurations
-export BASE_DIR="D:\Virtual Machines"                                         
-export SRC_VMX="D:\Virtual Machines\RockyLinux8_cloud\RockyLinux8_cloud.vmx"  
-export SNAPSHOT="template"                                                    
-export ROOTPASS="123"                                                         
+export BASE_DIR="D:\Virtual Machines"
+export SRC_VMX="D:\Virtual Machines\RockyLinux8_cloud\RockyLinux8_cloud.vmx"
+export SNAPSHOT="template"
+export ROOTPASS="123"
 
 ##############################################################################
 
@@ -27,7 +27,7 @@ if [ ! -f "$SRC_VMX" ]; then
 fi
 
 list_all_vms() {
-    find "$BASE_DIR" -name "*.vmx" | awk -F [/.] '{print $(NF-1)}'
+    find "$BASE_DIR" -name "*.vmx" | awk -F / '{print $(NF-1)}'
 }
 
 list_vm() {
@@ -36,6 +36,7 @@ list_vm() {
 
 clone_vm() {
     local vm_name="$1"
+
     vmrun -T ws clone "$SRC_VMX" "$BASE_DIR\\$vm_name\\$vm_name.vmx" linked -snapshot=$SNAPSHOT -cloneName=$vm_name
     if [ $? -ne 0 ]; then
         echo_err "Domain '$vm_name' create"
@@ -48,25 +49,30 @@ clone_vm() {
     "hostnamectl set-hostname $vm_name"
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' create"
-    fi   
+    fi
 }
 
 remove_vm() {
     local vm_name="$1"
+
     vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
     rm -rf "${BASE_DIR}\\${vm_name}"
     #vmrun -T ws deleteVM "$BASE_DIR/$vm_name/$vm_name.vmx"
+
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' remove"
     else
         echo_err "Domain '$vm_name' remove"
         exit 1
     fi
+    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
 }
 
 start_vm() {
     local vm_name="$1"
+
     vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
+
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' start"
     else
@@ -77,7 +83,9 @@ start_vm() {
 
 stop_vm() {
     local vm_name="$1"
+
     vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx"
+
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' stop"
     else
@@ -89,13 +97,45 @@ stop_vm() {
 set_host_ip() {
     local vm_name="$1"
     local ip_addr="$2"
+
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "nmcli connection modify eth0 ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes; nmcli connection up eth0"
+    
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
+
+        mkdir -p ~/.vmctl
+        sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
+        echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
     else
         echo_err "Domain '$vm_name' set ip"
         exit 1
+    fi
+
+    echo "Deploying SSH key..."
+
+    local ip_addr=$(grep -w "$vm_name" ~/.vmctl/hosts | awk '{print $2}')
+    local key=$(cat ~/.ssh/id_rsa.pub)
+
+    vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
+    "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
+
+    if ssh -o StrictHostKeyChecking=no root@$ip_addr exit; then
+        echo_ok "SSH key deployed"
+    else
+        echo_err "SSH key deployment failed"
+    fi
+}
+
+ssh_vm() {
+    local vm_name="$1"
+    local ip_addr=$(grep -w "$vm_name" ~/.vmctl/hosts | awk '{print $2}')
+
+    if [ -z "$ip_addr" ]; then
+        echo_err "IP address of '$vm_name' not found."
+        exit 1
+    else
+        ssh -o StrictHostKeyChecking=no root@$ip_addr
     fi
 }
 
@@ -110,6 +150,7 @@ Available commands:
   start      Start one or more VMs       $0 start <vm_name> [...]
   stop       Stop one or more VMs        $0 stop <vm_name> [...]
   setip      Set IP address of a VM      $0 setip <vm_name> <ip_addr>
+  ssh        SSH into a VM               $0 ssh <vm_name>
 
 For example:
   $0 clone web1 web2
@@ -175,6 +216,13 @@ case $1 in
         name=$(echo "$*" | awk '{print $1}')
         ip=$(echo "$*" | awk '{print $2}')
         set_host_ip "$name" "$ip"
+        ;;
+    "ssh")
+        if [ $# -ne 2 ]; then
+            usage
+        fi
+        shift
+        ssh_vm "$1"
         ;;
     *)
         usage
