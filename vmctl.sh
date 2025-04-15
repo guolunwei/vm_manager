@@ -149,6 +149,7 @@ Available commands:
   remove     Remove one or more VMs      $0 remove <vm_name> [...]
   start      Start one or more VMs       $0 start <vm_name> [...]
   stop       Stop one or more VMs        $0 stop <vm_name> [...]
+  restart    Restart one or more VMs     $0 restart <vm_name> [...]
   setip      Set IP address of a VM      $0 setip <vm_name> <ip_addr>
   ssh        SSH into a VM               $0 ssh <vm_name>
 
@@ -206,6 +207,17 @@ case $1 in
         shift
         for vm_name in "$@"; do
             stop_vm "$vm_name"
+        done
+        ;;
+    "restart")
+        if [ $# -lt 2 ]; then
+            usage
+        fi
+        shift
+        for vm_name in "$@"; do
+            stop_vm "$vm_name"
+            sleep 3
+            start_vm "$vm_name"
         done
         ;;
     "setip")
