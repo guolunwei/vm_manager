@@ -1,14 +1,5 @@
 #!/bin/bash
 
-##############################################################################
-# vm manger configurations
-export BASE_DIR="D:\Virtual Machines"
-export SRC_VMX="D:\Virtual Machines\RockyLinux8_cloud\RockyLinux8_cloud.vmx"
-export SNAPSHOT="template"
-export ROOTPASS="123"
-
-##############################################################################
-
 echo_ok(){   
     echo -n "$1" 
     echo -en "\\033[55G"
@@ -20,6 +11,15 @@ echo_err(){
     echo -en "\\033[55G"
     echo -e "\033[31m[FAILED]\\033[0m"
 } 
+
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+CONFIG_FILE="$SCRIPT_DIR/config.ini"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Configuration file $CONFIG_FILE not found."
+    exit 1
+fi
+source "$CONFIG_FILE"
 
 if [ ! -f "$SRC_VMX" ]; then
     echo "Source vmx does not exist."
