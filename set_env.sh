@@ -4,8 +4,10 @@
 
 set -e
 
-cat > /etc/profile.d/vmctl.sh <<'EOF'
-export PATH=$PATH:/d/Downloads/repos/vm_manager
+SCRIPT_DIR=$(realpath "$(dirname "$0")")
+
+cat > /etc/profile.d/vmctl.sh <<EOF
+export PATH=\$PATH:$SCRIPT_DIR
 alias vm="vmctl.sh"
 EOF
 
