@@ -5,6 +5,7 @@
 set -e
 
 SCRIPT_DIR=$(realpath "$(dirname "$0")")
+echo ${SCRIPT_DIR}
 
 cat > /etc/profile.d/vmctl.sh <<EOF
 export PATH=\$PATH:$SCRIPT_DIR
