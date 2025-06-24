@@ -144,21 +144,21 @@ ssh_vm() {
 
 usage() {
     cat <<EOF
-Usage: $0 [command] [arguments]
+Usage: vm [command] [arguments]
 
 Available commands:
-  list       List running or all VMs     $0 list [--all]
-  clone      Clone one or more VMs       $0 clone <vm_name> [...]
-  remove     Remove one or more VMs      $0 remove <vm_name> [...]
-  start      Start one or more VMs       $0 start <vm_name> [...]
-  stop       Stop one or more VMs        $0 stop <vm_name> [...]
-  restart    Restart one or more VMs     $0 restart <vm_name> [...]
-  setip      Set IP address of a VM      $0 setip <vm_name> <ip_addr>
-  ssh        SSH into a VM               $0 ssh <vm_name>
+  list       List running or all VMs     vm list [--all]
+  clone      Clone one or more VMs       vm clone <vm_name> [...]
+  remove     Remove one or more VMs      vm remove <vm_name> [...]
+  start      Start one or more VMs       vm start <vm_name> [...]
+  stop       Stop one or more VMs        vm stop <vm_name> [...]
+  restart    Restart one or more VMs     vm restart <vm_name> [...]
+  setip      Set IP address of a VM      vm setip <vm_name> <ip_addr>
+  ssh        SSH into a VM               vm ssh <vm_name>
 
 For example:
-  $0 clone web1 web2
-  $0 setip web1 192.168.88.100
+  vm clone web1 web2
+  vm setip web1 192.168.88.100
 EOF
     exit 1
 }
