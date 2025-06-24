@@ -9,19 +9,19 @@ This script provides functionality to manage virtual machines (VMs) based on a t
 
 ### Usage
 ```bash
-Usage: /d/Downloads/repos/vm_manager/vmctl.sh [command] [arguments]
+Usage: vm [command] [arguments]
 
 Available commands:
-  list       List running or all VMs     /d/Downloads/repos/vm_manager/vmctl.sh list [--all]
-  clone      Clone one or more VMs       /d/Downloads/repos/vm_manager/vmctl.sh clone <vm_name> [...]
-  remove     Remove one or more VMs      /d/Downloads/repos/vm_manager/vmctl.sh remove <vm_name> [...]
-  start      Start one or more VMs       /d/Downloads/repos/vm_manager/vmctl.sh start <vm_name> [...]
-  stop       Stop one or more VMs        /d/Downloads/repos/vm_manager/vmctl.sh stop <vm_name> [...]
-  restart    Restart one or more VMs     /d/Downloads/repos/vm_manager/vmctl.sh restart <vm_name> [...]
-  setip      Set IP address of a VM      /d/Downloads/repos/vm_manager/vmctl.sh setip <vm_name> <ip_addr>
-  ssh        SSH into a VM               /d/Downloads/repos/vm_manager/vmctl.sh ssh <vm_name>
+  list       List running or all VMs     vm list [--all]
+  clone      Clone one or more VMs       vm clone <vm_name> [...]
+  remove     Remove one or more VMs      vm remove <vm_name> [...]
+  start      Start one or more VMs       vm start <vm_name> [...]
+  stop       Stop one or more VMs        vm stop <vm_name> [...]
+  restart    Restart one or more VMs     vm restart <vm_name> [...]
+  setip      Set IP address of a VM      vm setip <vm_name> <ip_addr>
+  ssh        SSH into a VM               vm ssh <vm_name>
 
 For example:
-  /d/Downloads/repos/vm_manager/vmctl.sh clone web1 web2
-  /d/Downloads/repos/vm_manager/vmctl.sh setip web1 192.168.88.100
+  vm clone web1 web2
+  vm setip web1 192.168.88.100
 ```
