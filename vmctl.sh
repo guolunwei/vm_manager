@@ -118,12 +118,17 @@ set_host_ip() {
     echo "Deploying SSH key..."
 
     local ip_addr=$(grep -w "$vm_name" ~/.vmctl/hosts | awk '{print $2}')
+
+    if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
+        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
+    fi
+
     local key=$(cat ~/.ssh/id_rsa.pub)
 
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
 
-    if ssh -o StrictHostKeyChecking=accept-new -o ForwardX11=no root@$ip_addr exit; then
+    if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2> /dev/null; then
         echo_ok "SSH key deployed"
     else
         echo_err "SSH key deployment failed"
