@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 echo_ok(){   
     echo -n "$1" 
     echo -en "\\033[55G"
@@ -99,12 +101,13 @@ set_host_ip() {
     local ip_addr="$2"
 
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "nmcli connection modify eth0 ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes; nmcli connection up eth0"
+    "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 ipv4.gateway $GATEWAY ipv4.dns $DNS autoconnect yes && nmcli connection up '$CONNECTION'"
     
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
 
         mkdir -p ~/.vmctl
+	touch ~/.vmctl/hosts
         sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
         echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
     else
@@ -120,7 +123,7 @@ set_host_ip() {
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
 
-    if ssh -o StrictHostKeyChecking=no root@$ip_addr exit; then
+    if ssh -o StrictHostKeyChecking=accept-new -o ForwardX11=no root@$ip_addr exit; then
         echo_ok "SSH key deployed"
     else
         echo_err "SSH key deployment failed"
