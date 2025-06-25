@@ -57,6 +57,7 @@ clone_vm() {
 remove_vm() {
     local vm_name="$1"
 
+    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
     vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
     rm -rf "${BASE_DIR}\\${vm_name}"
     #vmrun -T ws deleteVM "$BASE_DIR/$vm_name/$vm_name.vmx"
@@ -67,7 +68,6 @@ remove_vm() {
         echo_err "Domain '$vm_name' remove"
         exit 1
     fi
-    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
 }
 
 start_vm() {
