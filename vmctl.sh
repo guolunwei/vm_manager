@@ -143,7 +143,7 @@ ssh_vm() {
         echo_err "IP address of '$vm_name' not found."
         exit 1
     else
-        ssh -o StrictHostKeyChecking=no root@$ip_addr
+        ssh -o StrictHostKeyChecking=no -o ForwardX11=no root@$ip_addr
     fi
 }
 
