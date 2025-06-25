@@ -58,9 +58,11 @@ remove_vm() {
     local vm_name="$1"
 
     sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
-    vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
-    rm -rf "${BASE_DIR}\\${vm_name}"
-    #vmrun -T ws deleteVM "$BASE_DIR/$vm_name/$vm_name.vmx"
+
+    if vmrun -T ws list | grep -q "$1.vmx"; then
+        vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
+    fi
+    vmrun -T ws deleteVM "$BASE_DIR/$vm_name/$vm_name.vmx"
 
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' remove"
