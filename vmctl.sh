@@ -62,7 +62,7 @@ remove_vm() {
     if vmrun -T ws list | grep -q "$1.vmx"; then
         vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
     fi
-    vmrun -T ws deleteVM "$BASE_DIR/$vm_name/$vm_name.vmx"
+    vmrun -T ws deleteVM "$BASE_DIR\\$vm_name\\$vm_name.vmx"
 
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' remove"
