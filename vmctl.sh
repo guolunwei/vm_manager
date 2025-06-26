@@ -33,7 +33,7 @@ list_all_vms() {
 }
 
 list_vm() {
-    vmrun list | awk -F'.' 'NR>1 {print $(NF-1)}' | awk -F'\' '{print $NF}'
+    vmrun list | awk -F'\' 'NR>1 {print $NF}' | sed 's/\.vmx//'
 }
 
 clone_vm() {
