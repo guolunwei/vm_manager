@@ -1,11 +1,25 @@
 ### Virtual Machine Management Script
-This script provides functionality to manage virtual machines (VMs) based on a template snapshot. It supports listing, cloning, removing, starting, stopping, restarting and setting the IP address of VMs.
+This script provides functionality to manage virtual machines (VMs) based on a template snapshot. 
+It supports listing, cloning, removing, starting, stopping, restarting and setting the IP address of VMs.
 
 ### Prerequisites
-- vmrun.exe utility must be installed and accessible from the command line.
-- The source VMX file (Rocky8_nsd.vmx) should exist at D:\Virtual Machines\Rocky8_nsd\Rocky8_nsd.vmx.
-- The directory D:\Virtual Machines should be accessible and writable.
-- For windows, cygwin64 or WSL2 is available.
+- Install Git for Windows.
+- Install VMware Workstation and and put vmrun.exe in Git's PATH.
+- Create a vm, take a snapshot of it, then modify the config.ini configuration.
+
+### Installation
+```bash
+git clone https://github.com/guolunwei/vm_manager.git
+chmod -R +x vm_manager/*.sh
+
+cd vm_manager
+./set_env.sh
+
+source /etc/profile
+
+# Modify configurations
+vim /path/to/vm_manager/config.ini
+```
 
 ### Usage
 ```bash
