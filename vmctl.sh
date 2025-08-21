@@ -139,7 +139,7 @@ set_host_ip() {
 
 ssh_vm() {
     local vm_name="$1"
-    local ip_addr=$(grep -w "$vm_name" ~/.vmctl/hosts | awk '{print $2}')
+    local ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
 
     if [ -z "$ip_addr" ]; then
         echo_err "IP address of '$vm_name' not found."
