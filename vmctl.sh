@@ -62,6 +62,7 @@ remove_vm() {
     if vmrun -T ws list | grep -q "$1.vmx"; then
         vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
     fi
+    rm -rf "$BASE_DIR\\$vm_name\\$vm_name.vmx.lck"
     vmrun -T ws deleteVM "$BASE_DIR\\$vm_name\\$vm_name.vmx"
 
     if [ $? -eq 0 ]; then
@@ -103,7 +104,7 @@ set_host_ip() {
     local ip_addr="$2"
 
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 ipv4.gateway $GATEWAY ipv4.dns $DNS autoconnect yes && nmcli connection up '$CONNECTION'"
+    "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
     
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
@@ -119,7 +120,7 @@ set_host_ip() {
 
     echo "Deploying SSH key..."
 
-    local ip_addr=$(grep -w "$vm_name" ~/.vmctl/hosts | awk '{print $2}')
+    local ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
 
     if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
         ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
