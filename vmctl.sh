@@ -110,7 +110,7 @@ set_host_ip() {
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
 
         mkdir -p ~/.vmctl
-	    touch ~/.vmctl/hosts
+        touch ~/.vmctl/hosts
         sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
         echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
     else
