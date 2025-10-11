@@ -2,17 +2,17 @@
 
 set -e
 
-echo_ok(){   
-    echo -n "$1" 
+echo_ok() {
+    echo -n "$1"
     echo -en "\\033[55G"
     echo -e "\033[32m[SUCCESS]\\033[0m"
 }
 
-echo_err(){   
-    echo -n "$1" 
+echo_err() {
+    echo -n "$1"
     echo -en "\\033[55G"
     echo -e "\033[31m[FAILED]\\033[0m"
-} 
+}
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 CONFIG_FILE="$SCRIPT_DIR/config.ini"
@@ -48,7 +48,7 @@ clone_vm() {
     vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
     sleep 3
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "hostnamectl set-hostname $vm_name"
+        "hostnamectl set-hostname $vm_name"
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' create"
     fi
@@ -60,7 +60,7 @@ remove_vm() {
     sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
 
     if vmrun -T ws list | grep -q "$1.vmx"; then
-        vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
+        vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &>/dev/null
     fi
     rm -rf "$BASE_DIR\\$vm_name\\$vm_name.vmx.lck"
     vmrun -T ws deleteVM "$BASE_DIR\\$vm_name\\$vm_name.vmx"
@@ -102,17 +102,18 @@ stop_vm() {
 set_host_ip() {
     local vm_name="$1"
     local ip_addr="$2"
+    local key
 
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
-    
+        "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
+
     if [ $? -eq 0 ]; then
         echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
 
         mkdir -p ~/.vmctl
         touch ~/.vmctl/hosts
         sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
-        echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
+        echo "$vm_name $ip_addr" >>~/.vmctl/hosts
     else
         echo_err "Domain '$vm_name' set ip"
         exit 1
@@ -120,18 +121,18 @@ set_host_ip() {
 
     echo "Deploying SSH key..."
 
-    local ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+    ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
 
     if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
         ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
     fi
 
-    local key=$(cat ~/.ssh/id_rsa.pub)
+    key=$(cat ~/.ssh/id_rsa.pub)
 
     vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
+        "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
 
-    if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2> /dev/null; then
+    if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2>/dev/null; then
         echo_ok "SSH key deployed"
     else
         echo_err "SSH key deployment failed"
@@ -140,8 +141,9 @@ set_host_ip() {
 
 ssh_vm() {
     local vm_name="$1"
-    local ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+    local ip_addr
 
+    ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
     if [ -z "$ip_addr" ]; then
         echo_err "IP address of '$vm_name' not found."
         exit 1
@@ -173,17 +175,17 @@ EOF
 
 case $1 in
     "list")
-    shift
-    if [ -z "$1" ]; then
-        list_vm
-        exit 0
-    elif [ "$1" == '--all' ]; then
-        list_all_vms
-        exit 0
-    else
-        usage
-    fi
-	;;
+        shift
+        if [ -z "$1" ]; then
+            list_vm
+            exit 0
+        elif [ "$1" == '--all' ]; then
+            list_all_vms
+            exit 0
+        else
+            usage
+        fi
+        ;;
     "clone")
         if [ $# -lt 2 ]; then
             usage
