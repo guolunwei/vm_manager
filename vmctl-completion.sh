@@ -1,42 +1,67 @@
+#!/bin/bash
+
 _vmctl_complete() {
-    local cur prev words cword
+  local cur prev words cword
+  _get_comp_words_by_ref -n : cur prev words cword
 
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD - 1]}"
-    words=("${COMP_WORDS[@]}")
-    cword=$COMP_CWORD
+  # get subcommands
+  local subcommands
+  mapfile -t subcommands_array < <(vmctl.sh 2> /dev/null | awk '/^Available commands:/{flag=1;next} /^For example:/{flag=0} flag {print $1}' | sort | uniq)
+  subcommands="${subcommands_array[*]}"
 
-    # get subcommands
-    local subcommands=$(vmctl.sh 2>/dev/null | awk '/^Available commands:/{flag=1;next} /^For example:/{flag=0} flag {print $1}' | sort | uniq)
-
-    case $cword in
-        1)
-            # complete subcommands
-            COMPREPLY=($(compgen -W "$subcommands" -- "$cur"))
-            ;;
+  case $cword in
+    1)
+      # complete subcommands
+      mapfile -t COMPREPLY < <(compgen -W "$subcommands" -- "$cur")
+      ;;
+    *)
+      case ${words[1]} in
+        clone | remove | start | stop | restart | ssh)
+          # get all vms and handle spaces properly
+          local vms_array
+          if mapfile -t vms_array < <(vmctl.sh list --all 2> /dev/null); then
+            # Use IFS to join array with newlines for compgen
+            local IFS=$'\n'
+            mapfile -t COMPREPLY < <(compgen -W "${vms_array[*]}" -- "$cur")
+          else
+            COMPREPLY=()
+          fi
+          ;;
+        setip)
+          case $cword in
+            2)
+              # complete vm name
+              local vms_array
+              if mapfile -t vms_array < <(vmctl.sh list --all 2> /dev/null); then
+                local IFS=$'\n'
+                mapfile -t COMPREPLY < <(compgen -W "${vms_array[*]}" -- "$cur")
+              else
+                COMPREPLY=()
+              fi
+              ;;
+            3)
+              # not complete ip
+              COMPREPLY=()
+              ;;
+            *)
+              COMPREPLY=()
+              ;;
+          esac
+          ;;
+        list)
+          # complete list options
+          if [[ "$cur" == -* ]]; then
+            mapfile -t COMPREPLY < <(compgen -W "--all" -- "$cur")
+          else
+            COMPREPLY=()
+          fi
+          ;;
         *)
-            case ${words[1]} in
-                clone | remove | start | stop | restart | setip | ssh)
-                    # get all vms
-                    local vms=$(vmctl.sh list --all 2>/dev/null)
-                    COMPREPLY=($(compgen -W "$vms" -- "$cur"))
-                    ;;
-                setip)
-                    if [ $cword -eq 2 ]; then
-                        # complete vm name
-                        local vms=$(vmctl.sh list --all 2>/dev/null)
-                        COMPREPLY=($(compgen -W "$vms" -- "$cur"))
-                    else
-                        # not complete ip*
-                        COMPREPLY=()
-                    fi
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            ;;
-    esac
+          COMPREPLY=()
+          ;;
+      esac
+      ;;
+  esac
 }
 
 complete -F _vmctl_complete vm

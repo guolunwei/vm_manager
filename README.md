@@ -1,5 +1,5 @@
 ### Virtual Machine Management Script
-This script provides functionality to manage virtual machines (VMs) based on a template snapshot. 
+This script provides functionality to manage virtual machines (VMs) based on a template snapshot.
 It supports listing, cloning, removing, starting, stopping, restarting and setting the IP address of VMs.
 
 ### Prerequisites
