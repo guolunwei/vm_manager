@@ -3,157 +3,163 @@
 set -e
 
 echo_ok() {
-    echo -n "$1"
-    echo -en "\\033[55G"
-    echo -e "\033[32m[SUCCESS]\\033[0m"
+  echo -n "$1"
+  echo -en "\\033[55G"
+  echo -e "\033[32m[SUCCESS]\\033[0m"
 }
 
 echo_err() {
-    echo -n "$1"
-    echo -en "\\033[55G"
-    echo -e "\033[31m[FAILED]\\033[0m"
+  echo -n "$1"
+  echo -en "\\033[55G"
+  echo -e "\033[31m[FAILED]\\033[0m"
 }
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 CONFIG_FILE="$SCRIPT_DIR/config.ini"
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Configuration file $CONFIG_FILE not found."
-    exit 1
+  echo "Configuration file $CONFIG_FILE not found."
+  exit 1
 fi
 source "$CONFIG_FILE"
 
 if [ ! -f "$SRC_VMX" ]; then
-    echo "Source vmx does not exist."
-    exit 1
+  echo "Source vmx does not exist."
+  exit 1
 fi
 
 list_all_vms() {
-    find "$BASE_DIR" -name "*.vmx" | awk -F / '{print $(NF-1)}'
+  find "$BASE_DIR" -name "*.vmx" | awk -F / '{print $(NF-1)}'
 }
 
 list_vm() {
-    vmrun list | awk -F'\' 'NR>1 {print $NF}' | sed 's/\.vmx//'
+  vmrun list | awk -F'\' 'NR>1 {print $NF}' | sed 's/\.vmx//'
 }
 
 clone_vm() {
-    local vm_name="$1"
+  local vm_name="$1"
 
-    vmrun -T ws clone "$SRC_VMX" "$BASE_DIR\\$vm_name\\$vm_name.vmx" linked -snapshot=$SNAPSHOT -cloneName=$vm_name
-    if [ $? -ne 0 ]; then
-        echo_err "Domain '$vm_name' create"
-        exit 1
-    fi
+  vmrun -T ws clone "$SRC_VMX" "$BASE_DIR\\$vm_name\\$vm_name.vmx" linked -snapshot=$SNAPSHOT -cloneName=$vm_name
+  if [ $? -ne 0 ]; then
+    echo_err "Domain '$vm_name' create"
+    exit 1
+  fi
 
-    vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
-    sleep 3
-    vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-        "hostnamectl set-hostname $vm_name"
-    if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' create"
-    fi
+  vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
+  sleep 3
+  vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
+    "hostnamectl set-hostname $vm_name"
+  if [ $? -eq 0 ]; then
+    echo_ok "Domain '$vm_name' create"
+  fi
 }
 
 remove_vm() {
-    local vm_name="$1"
+  local vm_name="$1"
+  local ip_addr
 
-    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
+  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+  if [ -n "$ip_addr" ]; then
+    ssh-keygen -R "$ip_addr" &> /dev/null
+  fi
 
-    if vmrun -T ws list | grep -q "$1.vmx"; then
-        vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &>/dev/null
-    fi
-    rm -rf "$BASE_DIR\\$vm_name\\$vm_name.vmx.lck"
-    vmrun -T ws deleteVM "$BASE_DIR\\$vm_name\\$vm_name.vmx"
+  sed -i "/^$vm_name /d" ~/.vmctl/hosts 2> /dev/null
 
-    if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' remove"
-    else
-        echo_err "Domain '$vm_name' remove"
-        exit 1
-    fi
+  if vmrun -T ws list | grep -q "$1.vmx"; then
+    vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
+  fi
+  rm -rf "$BASE_DIR\\$vm_name\\$vm_name.vmx.lck"
+  vmrun -T ws deleteVM "$BASE_DIR\\$vm_name\\$vm_name.vmx"
+
+  if [ $? -eq 0 ]; then
+    echo_ok "Domain '$vm_name' remove"
+  else
+    echo_err "Domain '$vm_name' remove"
+    exit 1
+  fi
 }
 
 start_vm() {
-    local vm_name="$1"
+  local vm_name="$1"
 
-    vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
+  vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
 
-    if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' start"
-    else
-        echo_err "Domain '$vm_name' start"
-        exit 1
-    fi
+  if [ $? -eq 0 ]; then
+    echo_ok "Domain '$vm_name' start"
+  else
+    echo_err "Domain '$vm_name' start"
+    exit 1
+  fi
 }
 
 stop_vm() {
-    local vm_name="$1"
+  local vm_name="$1"
 
-    vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx"
+  vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx"
 
-    if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' stop"
-    else
-        echo_err "Domain '$vm_name' stop"
-        exit 1
-    fi
+  if [ $? -eq 0 ]; then
+    echo_ok "Domain '$vm_name' stop"
+  else
+    echo_err "Domain '$vm_name' stop"
+    exit 1
+  fi
 }
 
 set_host_ip() {
-    local vm_name="$1"
-    local ip_addr="$2"
-    local key
+  local vm_name="$1"
+  local ip_addr="$2"
+  local key
 
-    vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-        "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
+  vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
+    "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
 
-    if [ $? -eq 0 ]; then
-        echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
+  if [ $? -eq 0 ]; then
+    echo_ok "Domain '$vm_name' set ip to '$ip_addr'"
 
-        mkdir -p ~/.vmctl
-        touch ~/.vmctl/hosts
-        sed -i "/^$vm_name /d" ~/.vmctl/hosts 2>/dev/null
-        echo "$vm_name $ip_addr" >>~/.vmctl/hosts
-    else
-        echo_err "Domain '$vm_name' set ip"
-        exit 1
-    fi
+    mkdir -p ~/.vmctl
+    touch ~/.vmctl/hosts
+    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2> /dev/null
+    echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
+  else
+    echo_err "Domain '$vm_name' set ip"
+    exit 1
+  fi
 
-    echo "Deploying SSH key..."
+  echo "Deploying SSH key..."
 
-    ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
 
-    if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
-        ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
-    fi
+  if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
+    ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
+  fi
 
-    key=$(cat ~/.ssh/id_rsa.pub)
+  key=$(cat ~/.ssh/id_rsa.pub)
 
-    vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-        "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
+  vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
+    "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
 
-    if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2>/dev/null; then
-        echo_ok "SSH key deployed"
-    else
-        echo_err "SSH key deployment failed"
-    fi
+  if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2> /dev/null; then
+    echo_ok "SSH key deployed"
+  else
+    echo_err "SSH key deployment failed"
+  fi
 }
 
 ssh_vm() {
-    local vm_name="$1"
-    local ip_addr
+  local vm_name="$1"
+  local ip_addr
 
-    ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
-    if [ -z "$ip_addr" ]; then
-        echo_err "IP address of '$vm_name' not found."
-        exit 1
-    else
-        ssh -o StrictHostKeyChecking=no -o ForwardX11=no root@$ip_addr
-    fi
+  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+  if [ -z "$ip_addr" ]; then
+    echo_err "IP address of '$vm_name' not found."
+    exit 1
+  else
+    ssh -o StrictHostKeyChecking=no -o ForwardX11=no root@$ip_addr
+  fi
 }
 
 usage() {
-    cat <<EOF
+  cat << EOF
 Usage: vm [command] [arguments]
 
 Available commands:
@@ -170,86 +176,86 @@ For example:
   vm clone web1 web2
   vm setip web1 192.168.88.100
 EOF
-    exit 1
+  exit 1
 }
 
 case $1 in
-    "list")
-        shift
-        if [ -z "$1" ]; then
-            list_vm
-            exit 0
-        elif [ "$1" == '--all' ]; then
-            list_all_vms
-            exit 0
-        else
-            usage
-        fi
-        ;;
-    "clone")
-        if [ $# -lt 2 ]; then
-            usage
-        fi
-        shift
-        for vm_name in "$@"; do
-            clone_vm "$vm_name"
-        done
-        ;;
-    "remove")
-        if [ $# -lt 2 ]; then
-            usage
-        fi
-        shift
-        for vm_name in "$@"; do
-            remove_vm "$vm_name"
-        done
-        ;;
-    "start")
-        if [ $# -lt 2 ]; then
-            usage
-        fi
-        shift
-        for vm_name in "$@"; do
-            start_vm "$vm_name"
-        done
-        ;;
-    "stop")
-        if [ $# -lt 2 ]; then
-            usage
-        fi
-        shift
-        for vm_name in "$@"; do
-            stop_vm "$vm_name"
-        done
-        ;;
-    "restart")
-        if [ $# -lt 2 ]; then
-            usage
-        fi
-        shift
-        for vm_name in "$@"; do
-            stop_vm "$vm_name"
-            sleep 3
-            start_vm "$vm_name"
-        done
-        ;;
-    "setip")
-        if [ $# -ne 3 ]; then
-            usage
-        fi
-        shift
-        name=$(echo "$*" | awk '{print $1}')
-        ip=$(echo "$*" | awk '{print $2}')
-        set_host_ip "$name" "$ip"
-        ;;
-    "ssh")
-        if [ $# -ne 2 ]; then
-            usage
-        fi
-        shift
-        ssh_vm "$1"
-        ;;
-    *)
-        usage
-        ;;
+  "list")
+    shift
+    if [ -z "$1" ]; then
+      list_vm
+      exit 0
+    elif [ "$1" == '--all' ]; then
+      list_all_vms
+      exit 0
+    else
+      usage
+    fi
+    ;;
+  "clone")
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    shift
+    for vm_name in "$@"; do
+      clone_vm "$vm_name"
+    done
+    ;;
+  "remove")
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    shift
+    for vm_name in "$@"; do
+      remove_vm "$vm_name"
+    done
+    ;;
+  "start")
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    shift
+    for vm_name in "$@"; do
+      start_vm "$vm_name"
+    done
+    ;;
+  "stop")
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    shift
+    for vm_name in "$@"; do
+      stop_vm "$vm_name"
+    done
+    ;;
+  "restart")
+    if [ $# -lt 2 ]; then
+      usage
+    fi
+    shift
+    for vm_name in "$@"; do
+      stop_vm "$vm_name"
+      sleep 3
+      start_vm "$vm_name"
+    done
+    ;;
+  "setip")
+    if [ $# -ne 3 ]; then
+      usage
+    fi
+    shift
+    name=$(echo "$*" | awk '{print $1}')
+    ip=$(echo "$*" | awk '{print $2}')
+    set_host_ip "$name" "$ip"
+    ;;
+  "ssh")
+    if [ $# -ne 2 ]; then
+      usage
+    fi
+    shift
+    ssh_vm "$1"
+    ;;
+  *)
+    usage
+    ;;
 esac
