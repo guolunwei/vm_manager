@@ -14,6 +14,10 @@ echo_err() {
   echo -e "\033[31m[FAILED]\\033[0m"
 }
 
+vmname_to_hostname() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | tr ' ' '-'
+}
+
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 CONFIG_FILE="$SCRIPT_DIR/config.ini"
 
@@ -38,8 +42,11 @@ list_vm() {
 
 clone_vm() {
   local vm_name="$1"
+  local hostname
 
-  vmrun -T ws clone "$SRC_VMX" "$BASE_DIR\\$vm_name\\$vm_name.vmx" linked -snapshot=$SNAPSHOT -cloneName=$vm_name
+  hostname=$(vmname_to_hostname "$vm_name")
+
+  vmrun -T ws clone "$SRC_VMX" "$BASE_DIR\\$vm_name\\$vm_name.vmx" linked -snapshot="$SNAPSHOT" -cloneName="$vm_name"
   if [ $? -ne 0 ]; then
     echo_err "Domain '$vm_name' create"
     exit 1
@@ -48,7 +55,7 @@ clone_vm() {
   vmrun -T ws start "$BASE_DIR\\$vm_name\\$vm_name.vmx" gui
   sleep 3
   vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
-    "hostnamectl set-hostname $vm_name"
+    "hostnamectl set-hostname $hostname"
   if [ $? -eq 0 ]; then
     echo_ok "Domain '$vm_name' create"
   fi
@@ -56,14 +63,17 @@ clone_vm() {
 
 remove_vm() {
   local vm_name="$1"
+  local hostname
   local ip_addr
 
-  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+  hostname=$(vmname_to_hostname "$vm_name")
+  ip_addr=$(awk -v name="$hostname" '$1 == name {print $2}' ~/.vmctl/hosts)
+
   if [ -n "$ip_addr" ]; then
     ssh-keygen -R "$ip_addr" &> /dev/null
   fi
 
-  sed -i "/^$vm_name /d" ~/.vmctl/hosts 2> /dev/null
+  sed -i "/^$hostname /d" ~/.vmctl/hosts 2> /dev/null
 
   if vmrun -T ws list | grep -q "$1.vmx"; then
     vmrun -T ws stop "$BASE_DIR\\$vm_name\\$vm_name.vmx" &> /dev/null
@@ -107,8 +117,11 @@ stop_vm() {
 
 set_host_ip() {
   local vm_name="$1"
+  local hostname
   local ip_addr="$2"
   local key
+
+  hostname=$(vmname_to_hostname "$vm_name")
 
   vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "nmcli connection modify '$CONNECTION' ipv4.method manual ipv4.addresses $ip_addr/24 autoconnect yes && nmcli connection up '$CONNECTION'"
@@ -118,16 +131,14 @@ set_host_ip() {
 
     mkdir -p ~/.vmctl
     touch ~/.vmctl/hosts
-    sed -i "/^$vm_name /d" ~/.vmctl/hosts 2> /dev/null
-    echo "$vm_name $ip_addr" >> ~/.vmctl/hosts
+    sed -i "/^$hostname /d" ~/.vmctl/hosts 2> /dev/null
+    echo "$hostname $ip_addr" >> ~/.vmctl/hosts
   else
     echo_err "Domain '$vm_name' set ip"
     exit 1
   fi
 
   echo "Deploying SSH key..."
-
-  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
 
   if [ ! -f "$HOME/.ssh/id_rsa.pub" ]; then
     ssh-keygen -t rsa -b 4096 -f "$HOME/.ssh/id_rsa" -q -N ""
@@ -138,7 +149,7 @@ set_host_ip() {
   vmrun -T ws -gu root -gp "$ROOTPASS" runScriptInGuest "$BASE_DIR\\$vm_name\\$vm_name.vmx" "bin/bash" \
     "mkdir -p /root/.ssh && echo $key > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && chmod 700 /root/.ssh"
 
-  if ssh -o StrictHostKeyChecking=accept-new root@$ip_addr exit 2> /dev/null; then
+  if ssh -o StrictHostKeyChecking=accept-new root@"$ip_addr" exit 2> /dev/null; then
     echo_ok "SSH key deployed"
   else
     echo_err "SSH key deployment failed"
@@ -147,14 +158,17 @@ set_host_ip() {
 
 ssh_vm() {
   local vm_name="$1"
+  local hostname
   local ip_addr
 
-  ip_addr=$(awk -v name="$vm_name" '$1 == name {print $2}' ~/.vmctl/hosts)
+  hostname=$(vmname_to_hostname "$vm_name")
+  ip_addr=$(awk -v name="$hostname" '$1 == name {print $2}' ~/.vmctl/hosts)
+
   if [ -z "$ip_addr" ]; then
     echo_err "IP address of '$vm_name' not found."
     exit 1
   else
-    ssh -o StrictHostKeyChecking=no -o ForwardX11=no root@$ip_addr
+    ssh -o StrictHostKeyChecking=no -o ForwardX11=no root@"$ip_addr"
   fi
 }
 
@@ -198,6 +212,7 @@ case $1 in
     fi
     shift
     for vm_name in "$@"; do
+      echo "Cloning '$vm_name'..."
       clone_vm "$vm_name"
     done
     ;;
@@ -240,12 +255,14 @@ case $1 in
     done
     ;;
   "setip")
+    # echo "argc=$#"
+    # printf 'arg=<%s>\n' "$@"
     if [ $# -ne 3 ]; then
       usage
     fi
     shift
-    name=$(echo "$*" | awk '{print $1}')
-    ip=$(echo "$*" | awk '{print $2}')
+    name="$1"
+    ip="$2"
     set_host_ip "$name" "$ip"
     ;;
   "ssh")
