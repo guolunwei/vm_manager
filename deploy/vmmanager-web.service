@@ -1,0 +1,45 @@
+# VM Manager —— Web 进程（gunicorn）
+#
+#   sudo cp deploy/vmmanager-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now vmmanager-web
+#
+# 注意 `--workers 1 --threads 8`：默认 SQLite 在多人写入下会锁表，
+# 多进程反而更容易触发 database is locked。要横向扩展请先换 PostgreSQL。
+
+[Unit]
+Description=VM Manager Web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vmmanager
+Group=vmmanager
+WorkingDirectory=/opt/vm_manager
+Environment=DJANGO_SETTINGS_MODULE=config.settings.prod
+Environment=PYTHONUNBUFFERED=1
+
+# DEBUG=False 时 Django 不再直供 static/，由 WhiteNoise 发 collectstatic 的产物，
+# 所以每次启动先同步一次静态文件（幂等，很快）。
+ExecStartPre=/opt/vm_manager/.venv/bin/python manage.py collectstatic --noinput
+
+ExecStart=/opt/vm_manager/.venv/bin/gunicorn config.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --workers 1 \
+    --threads 8 \
+    --timeout 120 \
+    --access-logfile - \
+    --error-logfile -
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vmmanager-web
+
+[Install]
+WantedBy=multi-user.target

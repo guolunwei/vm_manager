@@ -1,0 +1,9 @@
+# 运行依赖（开发依赖见 pyproject.toml 的 [project.optional-dependencies].dev）
+Django>=6.0
+djangorestframework>=3.15
+whitenoise>=6.6
+
+# WSGI 服务器：Windows 用 waitress，类 Unix 用 gunicorn。
+# 平台标记让 pip 只装当前系统需要的那一个。
+waitress>=3.0; platform_system == "Windows"
+gunicorn>=21.0; platform_system != "Windows"

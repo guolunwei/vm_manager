@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}{{ vm.name }} · {{ site_name }}{% endblock %}
+{% block heading %}{{ vm.name }}{% endblock %}
+{% block subheading %}
+  <p class="muted">
+    <span class="pill pill-{{ vm.state_css }}"><i></i>{{ vm.get_power_state_display }}</span>
+    {% if vm.ip_address %}<code class="ip">{{ vm.ip_address }}</code>{% endif %}
+    {% if active_job %}<span class="muted">· 有任务进行中：{{ active_job.get_kind_display }}</span>{% endif %}
+  </p>
+{% endblock %}
+
+{% block topbar %}
+  {% if vm.is_running %}
+    <button class="btn" data-action="vm-action" data-op="stop"
+            data-url="{% url 'vm_action' vm.pk 'stop' %}" data-name="{{ vm.name }}">关机</button>
+    <button class="btn" data-action="vm-action" data-op="reset"
+            data-url="{% url 'vm_action' vm.pk 'reset' %}" data-name="{{ vm.name }}">重启</button>
+  {% else %}
+    <button class="btn btn-primary" data-action="vm-action" data-op="start"
+            data-url="{% url 'vm_action' vm.pk 'start' %}" data-name="{{ vm.name }}">开机</button>
+  {% endif %}
+  <button class="btn" data-action="vm-action" data-op="probe-ip"
+          data-url="{% url 'vm_action' vm.pk 'probe-ip' %}" data-name="{{ vm.name }}">探测 IP</button>
+  <a class="btn" href="{% url 'vm_console' vm.pk %}">控制台</a>
+  {% if can_manage %}
+  <button class="btn btn-danger" data-action="vm-delete"
+          data-url="{% url 'vm_action' vm.pk 'delete' %}" data-name="{{ vm.name }}">删除</button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="detail-layout">
+  <div class="detail-main">
+    <section class="card">
+      <div class="card-head">
+        <h2>基本信息</h2>
+        {% if vm.template %}
+        <a class="link" href="{% url 'settings' %}">模板：{{ vm.template.name }}</a>
+        {% endif %}
+      </div>
+      <dl class="kv">
+        <dt>主机名</dt><dd>{{ vm.hostname|default:"—" }}</dd>
+        <dt>IP 地址</dt>
+        <dd>
+          {% if vm.ip_address %}
+            <code class="ip">{{ vm.ip_address }}</code>
+            <button class="btn btn-xs" data-copy="{{ vm.ip_address }}">复制</button>
+          {% else %}
+            <span class="muted">未检测到</span>
+          {% endif %}
+        </dd>
+        <dt>MAC</dt><dd><code>{{ vm.mac_address|default:"—" }}</code></dd>
+        <dt>规格</dt><dd>{{ vm.cpus }} vCPU · {{ vm.memory_display }}</dd>
+        <dt>克隆方式</dt><dd>{{ vm.get_clone_type_display }}</dd>
+        <dt>创建人</dt><dd>{{ vm.owner.username|default:"—" }}</dd>
+        <dt>创建时间</dt><dd>{{ vm.created_at|date:"Y-m-d H:i:s" }}</dd>
+        <dt>vmx 路径</dt><dd><code class="path">{{ vm.vmx_path }}</code></dd>
+        {% if metrics.memory_mb %}
+        <dt>实际占用</dt><dd>{{ metrics.memory_mb }} MB（进程 PID {{ metrics.pid }}）</dd>
+        {% endif %}
+        {% if vm.notes %}
+        <dt>备注</dt><dd>{{ vm.notes }}</dd>
+        {% endif %}
+      </dl>
+      {% if not vm.exists %}
+      <div class="flash flash-error"><span>vmx 文件已不存在，这条记录可能已过期。</span></div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>资源趋势</h2>
+        <span class="muted">
+          {% if chart.series %}
+            最近 {{ chart.hours }} 小时 · {{ chart.series|length }} 个采样点
+          {% elif metrics_enabled %}
+            暂无采样（采集开启后每几分钟记录一次）
+          {% else %}
+            未开启采集（config.ini 设置 VMM_METRICS_ENABLED=1）
+          {% endif %}
+        </span>
+      </div>
+      {% if chart.series %}
+      <div class="metric-chart">
+        <svg viewBox="0 0 560 96" preserveAspectRatio="none" role="img" aria-label="CPU 与内存使用率趋势">
+          <line x1="0" y1="96" x2="560" y2="96" class="chart-axis"/>
+          <polyline points="{{ chart.mem_points }}" class="chart-line chart-mem"/>
+          <polyline points="{{ chart.cpu_points }}" class="chart-line chart-cpu"/>
+        </svg>
+        <div class="metric-legend">
+          <span><i class="dot dot-cpu"></i>CPU {{ chart.latest.cpu_percent }}%</span>
+          <span><i class="dot dot-mem"></i>内存 {{ chart.latest.mem_percent }}%（{{ chart.latest.mem_used_mb }} MB）</span>
+          <span class="muted">{{ chart.series.0.time }} → {{ chart.latest.time }}</span>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>快照</h2>
+        <span class="muted">共 {{ snapshots|length }} 个</span>
+      </div>
+
+      <form method="post" action="{% url 'snapshot_create' vm.pk %}" class="inline-form"
+            data-action="submit-job" data-name="{{ vm.name }}">
+        {% csrf_token %}
+        {{ snapshot_form.name }}
+        {{ snapshot_form.description }}
+        <button class="btn btn-sm btn-primary" type="submit">创建快照</button>
+      </form>
+
+      {% if snapshots %}
+      <ul class="snap-list">
+        {% for snap in snapshots %}
+        <li>
+          <div>
+            <strong>{{ snap.name }}</strong>
+            {% if snap.is_current %}<span class="tag tag-ok">当前</span>{% endif %}
+            {% if snap.description %}<span class="muted">{{ snap.description }}</span>{% endif %}
+          </div>
+          <div class="snap-actions">
+            <span class="muted small">{{ snap.created_at|date:"m-d H:i" }}</span>
+            <button class="btn btn-xs" data-action="vm-action" data-op="revert"
+                    data-url="{% url 'snapshot_revert' vm.pk snap.name %}" data-name="{{ snap.name }}">回滚</button>
+            {% if can_manage %}
+            <button class="btn btn-xs btn-danger" data-action="vm-action" data-op="delete-snapshot"
+                    data-url="{% url 'snapshot_delete' vm.pk snap.name %}" data-name="{{ snap.name }}">删除</button>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">还没有快照。在上方输入名称，创建第一个快照。</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>任务历史</h2>
+        <a class="link" href="{% url 'jobs' %}?vm={{ vm.pk }}">全部 →</a>
+      </div>
+      {% if jobs %}
+      <ul class="job-list">
+        {% for job in jobs %}
+        <li>
+          <a href="{% url 'job_detail' job.pk %}">
+            <span class="dot dot-{{ job.status_css }}"></span>
+            <strong>#{{ job.pk }} {{ job.get_kind_display }}</strong>
+            <span class="muted">{{ job.created_at|date:"m-d H:i:s" }}</span>
+          </a>
+          <span class="muted">{{ job.duration }}s</span>
+          <span class="pill pill-{{ job.status_css }}">{{ job.get_status_display }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">暂无任务记录。</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="detail-side">
+    <div class="card">
+      <div class="card-head"><h2>更改 IP</h2></div>
+      <form method="post" action="{% url 'vm_set_ip' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+        {% csrf_token %}
+        {% for field in set_ip_form %}
+        <label class="field">
+          <span class="field-label">{{ field.label }}</span>
+          {{ field }}
+        </label>
+        {% endfor %}
+        <button class="btn btn-primary btn-block" type="submit">应用</button>
+        <p class="muted small">通过 nmcli 下发，切换后自动 ping 验证。切换过程中短暂断网属正常现象。</p>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>调整规格</h2></div>
+      <form method="post" action="{% url 'vm_resize' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+        {% csrf_token %}
+        {% for field in resize_form %}
+        <label class="field">
+          <span class="field-label">{{ field.label }}</span>
+          {{ field }}
+        </label>
+        {% endfor %}
+        <button class="btn btn-primary btn-block" type="submit">应用规格</button>
+        <p class="muted small">
+          VMware 只在开机时读取规格。运行中的机器会先软关机、写入后再自动开机，
+          期间会短暂停机。
+        </p>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>克隆这台机器</h2></div>
+      <p class="muted small">完整克隆，磁盘内容（已装的软件、配置）一并带走。克隆后自动改主机名并分配新 IP。</p>
+      <form method="post" action="{% url 'vm_clone' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+        {% csrf_token %}
+        {% for field in clone_form %}
+        <label class="field">
+          <span class="field-label">{{ field.label }}</span>
+          {{ field }}
+        </label>
+        {% endfor %}
+        <button class="btn btn-block" type="submit">开始克隆</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>磁盘扩容</h2></div>
+      {% if disk_gb %}
+      <p class="muted small">当前虚拟磁盘容量约 {{ disk_gb }} GB。</p>
+      {% endif %}
+      {% if vm.clone_type == "linked" %}
+      <div class="flash flash-warning"><span>链接克隆的磁盘与模板共享，无法扩容。请先克隆一台完整副本再扩容。</span></div>
+      {% else %}
+      <form method="post" action="{% url 'vm_grow_disk' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+        {% csrf_token %}
+        {% for field in grow_disk_form %}
+        <label class="field">
+          <span class="field-label">{{ field.label }}</span>
+          {{ field }}
+        </label>
+        {% endfor %}
+        <button class="btn btn-block" type="submit">扩容</button>
+        <p class="muted small">
+          需要先关机。扩完磁盘后会自动开机并尝试在 Guest 内扩展分区（需要 growpart；
+          LVM 布局不支持，需手动处理）。
+        </p>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>修复配置</h2></div>
+      <p class="muted small">如果创建时 Guest 尚未就绪、hostname / IP 没配置成功，可以在这里重试。</p>
+      <button class="btn btn-block" data-action="vm-action" data-op="reconfigure"
+              data-url="{% url 'vm_action' vm.pk 'reconfigure' %}" data-name="{{ vm.name }}">重试配置 hostname / IP</button>
+    </div>
+
+    {% if leases %}
+    <div class="card">
+      <div class="card-head"><h2>IP 历史</h2></div>
+      <ul class="plain-list">
+        {% for lease in leases %}
+        <li><code class="ip">{{ lease.ip }}</code><span class="muted">{{ lease.get_kind_display }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

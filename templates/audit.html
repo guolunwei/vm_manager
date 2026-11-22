@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}审计 · {{ site_name }}{% endblock %}
+{% block heading %}审计{% endblock %}
+{% block subheading %}
+  <p class="muted">所有变更操作的记录，只读</p>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <form method="get" class="toolbar">
+    <select name="action" class="input" onchange="this.form.submit()">
+      <option value="">全部操作</option>
+      {% for value, label in actions %}
+      <option value="{{ value }}" {% if action == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn" type="submit">筛选</button>
+    {% if action %}<a class="btn btn-ghost" href="{% url 'audit' %}">清空</a>{% endif %}
+  </form>
+
+  {% if events %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>来源</th><th>详情</th></tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr>
+          <td class="muted nowrap">{{ event.created_at|date:"m-d H:i:s" }}</td>
+          <td>{{ event.actor_label|default:"系统" }}</td>
+          <td><span class="tag">{{ event.get_action_display }}</span></td>
+          <td>{{ event.target_label|default:"—" }}</td>
+          <td class="muted">{{ event.source_ip|default:"—" }}</td>
+          <td class="muted small wrap">{{ event.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+  <div class="pager">
+    {% if page_obj.has_previous %}<a class="btn btn-sm" href="?page={{ page_obj.previous_page_number }}{% if action %}&action={{ action }}{% endif %}">上一页</a>{% endif %}
+    <span class="muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+    {% if page_obj.has_next %}<a class="btn btn-sm" href="?page={{ page_obj.next_page_number }}{% if action %}&action={{ action }}{% endif %}">下一页</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">◎</div>
+    <h3>还没有审计记录</h3>
+    <p class="muted">创建、删除、更改 IP 等操作都会自动记录在这里。</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

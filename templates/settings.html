@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}设置 · {{ site_name }}{% endblock %}
+{% block heading %}设置{% endblock %}
+{% block subheading %}
+  <p class="muted">模板、规格与运行环境</p>
+{% endblock %}
+
+{% block content %}
+<div class="detail-layout">
+  <div class="detail-main">
+    <section class="card">
+      <div class="card-head">
+        <h2>模板</h2>
+        <span class="muted">共 {{ templates|length }} 个</span>
+      </div>
+
+      {% if templates %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>快照</th>
+              <th>Guest</th>
+              <th>子网</th>
+              <th>状态</th>
+              {% if can_manage %}<th class="right">操作</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in templates %}
+            <tr>
+              <td>
+                <strong>{{ t.name }}</strong>
+                <span class="sub path">{{ t.vmx_path }}</span>
+              </td>
+              <td>{{ t.snapshot_label }}</td>
+              <td class="muted">{{ t.guest_user }}</td>
+              <td class="muted">
+                {% if t.gateway %}{{ t.gateway }}/{{ t.prefix_len }}{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if t.pk in running_template_ids %}
+                  <span class="pill pill-warn" title="模板应保持关机；模板运行时会让链接克隆的基础磁盘偏离其快照"><i></i>运行中</span>
+                {% elif not t.is_active %}
+                  <span class="pill pill-off"><i></i>已停用</span>
+                {% elif t.exists %}
+                  <span class="pill pill-ok"><i></i>可用</span>
+                {% else %}
+                  <span class="pill pill-failed"><i></i>文件缺失</span>
+                {% endif %}
+              </td>
+              {% if can_manage %}
+              <td class="right nowrap row-actions">
+                {% if t.exists %}
+                <form class="inline" method="post" action="{% url 'template_power' t.pk %}"
+                      {% if t.pk not in running_template_ids %}onsubmit="return confirm('确定开机模板 {{ t.name }}？维护完记得关机。');"{% endif %}>
+                  {% csrf_token %}
+                  {% if t.pk in running_template_ids %}
+                    <button class="btn btn-xs" type="submit" name="action" value="stop">关机</button>
+                  {% else %}
+                    <button class="btn btn-xs" type="submit" name="action" value="start">开机</button>
+                  {% endif %}
+                </form>
+                {% endif %}
+                <a class="btn btn-xs" href="?edit={{ t.pk }}">编辑</a>
+                <form method="post" action="{% url 'template_delete' t.pk %}" class="inline"
+                      onsubmit="return confirm('确定删除模板 {{ t.name }}？已有的虚拟机会保留。');">
+                  {% csrf_token %}
+                  <button class="btn btn-xs btn-danger" type="submit">删除</button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="muted">还没有模板。用下面的表单添加一个。</p>
+      {% endif %}
+    </section>
+
+    {% if can_manage %}
+    <section class="card">
+      <div class="card-head">
+        <h2>{% if edit_template %}编辑模板：{{ edit_template.name }}{% else %}新建模板{% endif %}</h2>
+        {% if edit_template %}<a class="link" href="{% url 'settings' %}">取消编辑</a>{% endif %}
+      </div>
+
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="template">
+        {% if edit_template %}<input type="hidden" name="id" value="{{ edit_template.pk }}">{% endif %}
+
+        <div class="grid-2">
+          <label class="field">
+            <span class="field-label">名称</span>{{ template_form.name }}
+            {% if template_form.name.errors %}<em class="field-error">{{ template_form.name.errors.0 }}</em>{% endif %}
+          </label>
+          <label class="field">
+            <span class="field-label">快照名称</span>{{ template_form.snapshot }}
+          </label>
+        </div>
+
+        <label class="field">
+          <span class="field-label">vmx 路径</span>{{ template_form.vmx_path }}
+          <em class="field-hint">指向黄金 VM；克隆以它为源</em>
+          {% if template_form.vmx_path.errors %}<em class="field-error">{{ template_form.vmx_path.errors.0 }}</em>{% endif %}
+        </label>
+
+        <div class="grid-3">
+          <label class="field"><span class="field-label">Guest OS</span>{{ template_form.os_family }}</label>
+          <label class="field"><span class="field-label">网络模式</span>{{ template_form.network_mode }}</label>
+          <label class="field"><span class="field-label">默认规格</span>{{ template_form.default_flavor }}</label>
+        </div>
+
+        <div class="grid-3">
+          <label class="field"><span class="field-label">Guest 用户</span>{{ template_form.guest_user }}</label>
+          <label class="field"><span class="field-label">Guest 密码</span>{{ template_form.guest_password }}</label>
+          <label class="field"><span class="field-label">网络连接</span>{{ template_form.guest_connection }}</label>
+        </div>
+
+        <div class="grid-3">
+          <label class="field"><span class="field-label">子网前缀</span>{{ template_form.prefix_len }}</label>
+          <label class="field"><span class="field-label">网关</span>{{ template_form.gateway }}</label>
+          <label class="field"><span class="field-label">DNS</span>{{ template_form.dns }}</label>
+        </div>
+
+        <div class="grid-3">
+          <label class="field"><span class="field-label">默认 vCPU</span>{{ template_form.default_cpus }}</label>
+          <label class="field"><span class="field-label">默认内存 (MB)</span>{{ template_form.default_memory_mb }}</label>
+          <label class="field"><span class="field-label">排序 / 启用</span>
+            <div class="inline-checks">{{ template_form.deploy_ssh_key }}<span>下发公钥</span>{{ template_form.is_active }}<span>启用</span></div>
+          </label>
+        </div>
+
+        <label class="field"><span class="field-label">备注</span>{{ template_form.notes }}</label>
+
+        <button class="btn btn-primary" type="submit">保存模板</button>
+      </form>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-head">
+        <h2>规格</h2>
+        <span class="muted">共 {{ flavors|length }} 个</span>
+      </div>
+
+      <div class="chip-row">
+        {% for f in flavors %}
+        <div class="chip">
+          <strong>{{ f.name }}</strong>
+          <span class="muted">{{ f.spec_display }}</span>
+          {% if can_manage %}
+          <a class="chip-act" href="?edit_flavor={{ f.pk }}" title="编辑">✎</a>
+          <form method="post" action="{% url 'flavor_delete' f.pk %}" class="inline"
+                onsubmit="return confirm('确定删除规格 {{ f.name }}？');">
+            {% csrf_token %}
+            <button class="chip-act danger" type="submit" title="删除">×</button>
+          </form>
+          {% endif %}
+        </div>
+        {% empty %}
+        <p class="muted">还没有规格。</p>
+        {% endfor %}
+      </div>
+
+      {% if can_manage %}
+      <form method="post" class="inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="flavor">
+        {% if edit_flavor %}<input type="hidden" name="id" value="{{ edit_flavor.pk }}">{% endif %}
+        {{ flavor_form.name }}
+        {{ flavor_form.cpus }}
+        {{ flavor_form.memory_mb }}
+        {{ flavor_form.description }}
+        <button class="btn btn-sm btn-primary" type="submit">
+          {% if edit_flavor %}保存{% else %}添加规格{% endif %}
+        </button>
+        {% if edit_flavor %}<a class="btn btn-sm btn-ghost" href="{% url 'settings' %}">取消</a>{% endif %}
+      </form>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="detail-side">
+    <div class="card">
+      <div class="card-head"><h2>运行环境</h2></div>
+      <dl class="kv compact">
+        <dt>VM 目录</dt><dd><code class="path">{{ config.base_dir }}</code></dd>
+        <dt>vmrun</dt><dd><code class="path">{{ config.vmrun }}</code></dd>
+        <dt>Guest 等待</dt><dd>{{ config.tools_wait }} s</dd>
+        <dt>子网扫描</dt><dd>{% if config.scan_enabled %}启用{% else %}停用{% endif %}</dd>
+        <dt>自助创建</dt><dd>{% if config.allow_self_service %}所有用户{% else %}仅管理员{% endif %}</dd>
+      </dl>
+      <p class="muted small">这些值来自 <code>config.ini</code> / 环境变量，修改后需重启服务生效。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>API 调用</h2></div>
+      <p class="muted small">供脚本集成使用的 Token 认证。先获取 Token，再放进 <code>Authorization</code> 头调用：</p>
+      <pre class="console small">TOKEN=$(curl -s -X POST {{ request.scheme }}://{{ request.get_host }}/api/v1/auth/token/ \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"YOUR_PASSWORD"}' | jq -r .token)
+
+curl -H "Authorization: Token $TOKEN" \
+  {{ request.scheme }}://{{ request.get_host }}/api/v1/vms/</pre>
+    </div>
+  </aside>
+</div>
+{% endblock %}

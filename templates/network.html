@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}网络 · {{ site_name }}{% endblock %}
+{% block heading %}网络{% endblock %}
+{% block subheading %}
+  <p class="muted">各模板子网的地址使用情况</p>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <h2>NAT 端口转发</h2>
+    <span class="muted">宿主端口 → 虚拟机端口{% if not nat_conf_found %} · 未找到 NAT 配置文件{% endif %}</span>
+  </div>
+
+  {% if forwards %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>协议</th><th>宿主端口</th><th>虚拟机</th><th class="right">操作</th></tr>
+      </thead>
+      <tbody>
+        {% for fw in forwards %}
+        <tr>
+          <td><span class="pill pill-queued">{{ fw.proto|upper }}</span></td>
+          <td><code>{{ fw.host_port }}</code></td>
+          <td><code class="ip">{{ fw.guest_ip }}:{{ fw.guest_port }}</code></td>
+          <td class="right">
+            {% if user.is_staff %}
+            <form method="post" action="{% url 'network_forward_delete' %}" class="inline-form">
+              {% csrf_token %}
+              <input type="hidden" name="proto" value="{{ fw.proto }}">
+              <input type="hidden" name="host_port" value="{{ fw.host_port }}">
+              <input type="hidden" name="guest_ip" value="{{ fw.guest_ip }}">
+              <input type="hidden" name="guest_port" value="{{ fw.guest_port }}">
+              <button class="btn btn-xs btn-danger" type="submit">删除</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{% if nat_conf_found %}还没有转发条目。{% else %}未找到 NAT 配置文件（vmnetnat.conf），端口转发不可用。{% endif %}</p>
+  {% endif %}
+
+  {% if user.is_staff and nat_conf_found %}
+  <form method="post" action="{% url 'network_forward_add' %}" class="inline-form" style="margin-top:12px">
+    {% csrf_token %}
+    <select name="proto" class="input" style="width:auto">
+      <option value="tcp">TCP</option>
+      <option value="udp">UDP</option>
+    </select>
+    <input type="number" name="host_port" class="input" placeholder="宿主端口" min="1" max="65535" required style="width:110px">
+    <span class="muted">→</span>
+    <input type="text" name="guest_ip" class="input" placeholder="虚拟机 IP" required style="width:150px">
+    <span class="muted">:</span>
+    <input type="number" name="guest_port" class="input" placeholder="端口" min="1" max="65535" required style="width:110px">
+    <button class="btn btn-sm btn-primary" type="submit">添加转发</button>
+  </form>
+  <p class="muted small">写入 vmnetnat.conf 并重启 NAT 服务。重启需要管理员权限；权限不足时会提示手工命令。</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>DHCP 静态绑定</h2>
+    <span class="muted">MAC → 固定 IP{% if not dhcp_conf_found %} · 未找到 DHCP 配置文件{% endif %}</span>
+  </div>
+
+  {% if bindings %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>MAC</th><th>固定 IP</th><th>条目名</th><th class="right">操作</th></tr>
+      </thead>
+      <tbody>
+        {% for b in bindings %}
+        <tr>
+          <td><code>{{ b.mac }}</code></td>
+          <td><code class="ip">{{ b.ip }}</code></td>
+          <td class="muted">{{ b.name }}</td>
+          <td class="right">
+            {% if user.is_staff and not b.mac|slice:":15" == "00:50:56:C0:00:" %}
+            <form method="post" action="{% url 'network_binding_delete' %}" class="inline-form">
+              {% csrf_token %}
+              <input type="hidden" name="mac" value="{{ b.mac }}">
+              <button class="btn btn-xs btn-danger" type="submit">删除</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">{% if dhcp_conf_found %}还没有静态绑定。{% else %}未找到 DHCP 配置文件（vmnetdhcp.conf），静态绑定不可用。{% endif %}</p>
+  {% endif %}
+
+  {% if user.is_staff and dhcp_conf_found %}
+  <form method="post" action="{% url 'network_binding_add' %}" class="inline-form" style="margin-top:12px">
+    {% csrf_token %}
+    <input type="text" name="mac" class="input" placeholder="MAC 如 00:0C:29:AA:BB:CC" required style="width:190px">
+    <span class="muted">→</span>
+    <input type="text" name="ip" class="input" placeholder="固定 IP" required style="width:150px">
+    <button class="btn btn-sm btn-primary" type="submit">添加绑定</button>
+  </form>
+  <p class="muted small">写入 vmnetdhcp.conf 并重启 DHCP 服务。绑定后该 MAC 每次开机都拿到同一地址，重启服务同样需要管理员权限。</p>
+  {% endif %}
+</section>
+
+{% if subnets %}
+  {% for subnet in subnets %}
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ subnet.cidr }}</h2>
+      <span class="muted">网关 {{ subnet.gateway }} · 模板 {{ subnet.template.name }} · 已登记 {{ subnet.used }} 个地址</span>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">可用静态范围</span>
+        <code class="ip meta-value">{{ subnet.static_range|default:"—" }}</code>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">DHCP 池</span>
+        <code class="ip meta-value">{{ subnet.dhcp_range|default:"未启用" }}</code>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">DNS</span>
+        <code class="ip meta-value">{{ subnet.dns|default:"—" }}</code>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">可用静态地址数</span>
+        <span class="meta-value">{{ subnet.capacity }}</span>
+      </div>
+    </div>
+    <p class="muted small">为新建 VM 自动分配 IP 时会跳过 DHCP 池，只从静态范围中选取地址。</p>
+
+    {% if subnet.leases %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr><th>IP</th><th>MAC</th><th>虚拟机</th><th>来源</th><th>登记时间</th></tr>
+        </thead>
+        <tbody>
+          {% for lease in subnet.leases %}
+          <tr>
+            <td><code class="ip">{{ lease.ip }}</code></td>
+            <td><code class="muted">{{ lease.mac|default:"—" }}</code></td>
+            <td>
+              {% if lease.vm %}
+                <a href="{% url 'vm_detail' lease.vm.pk %}">{{ lease.vm.name }}</a>
+              {% else %}
+                <span class="muted">{{ lease.note|default:"未登记" }}</span>
+              {% endif %}
+            </td>
+            <td class="muted">{{ lease.get_kind_display }}</td>
+            <td class="muted">{{ lease.created_at|date:"m-d H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">该子网还没有登记任何地址。</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+{% else %}
+<section class="card empty">
+  <div class="empty-icon">⇄</div>
+  <h3>没有可展示的子网</h3>
+  <p class="muted">模板配置好网关和子网前缀后，这里会展示地址使用情况。</p>
+  <a class="btn btn-primary" href="{% url 'settings' %}">去配置模板</a>
+</section>
+{% endif %}
+
+{% if unassigned %}
+<section class="card">
+  <div class="card-head">
+    <h2>未登记地址</h2>
+    <span class="muted">共 {{ unassigned|length }} 个</span>
+  </div>
+  <p class="muted small">这些地址已登记但没有关联到任何 VM（通常是创建失败留下的残留）。</p>
+  <div class="chip-row">
+    {% for lease in unassigned %}
+    <div class="chip"><code class="ip">{{ lease.ip }}</code><span class="muted">{{ lease.note }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

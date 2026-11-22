@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Job #{{ job.pk }} · {{ site_name }}{% endblock %}
+{% block heading %}Job #{{ job.pk }}{% endblock %}
+{% block subheading %}
+  <p class="muted">{{ job.get_kind_display }}{% if job.label %} · {{ job.label }}{% endif %}</p>
+{% endblock %}
+
+{% block topbar %}
+  {% if job.vm %}<a class="btn" href="{% url 'vm_detail' job.vm.pk %}">查看 VM</a>{% endif %}
+  {% if not job.is_finished %}
+  <button class="btn btn-danger" data-action="job-cancel"
+          data-url="{% url 'job_cancel' job.pk %}">取消任务</button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="progress-head">
+    <span class="pill pill-{{ job.status_css }}" id="job-status">
+      {% if job.status == 'running' %}<span class="spinner tiny"></span>{% else %}<i></i>{% endif %}
+      {{ job.get_status_display }}
+    </span>
+    <div class="progress-track">
+      <i id="job-progress" style="width: {{ job.progress }}%"></i>
+    </div>
+    <span class="muted" id="job-percent">{{ job.progress }}%</span>
+  </div>
+
+  <dl class="kv">
+    <dt>类型</dt><dd>{{ job.get_kind_display }}</dd>
+    <dt>对象</dt>
+    <dd>
+      {% if job.vm %}
+        <a href="{% url 'vm_detail' job.vm.pk %}">{{ job.vm.name }}</a>
+      {% else %}
+        {{ job.label|default:"—" }}
+      {% endif %}
+    </dd>
+    <dt>发起人</dt><dd>{{ job.created_by.username|default:"系统" }}</dd>
+    <dt>入队时间</dt><dd>{{ job.queued_at|date:"Y-m-d H:i:s" }}</dd>
+    <dt>开始时间</dt><dd>{{ job.started_at|date:"Y-m-d H:i:s"|default:"—" }}</dd>
+    <dt>结束时间</dt><dd>{{ job.finished_at|date:"Y-m-d H:i:s"|default:"—" }}</dd>
+    <dt>耗时</dt><dd><span id="job-duration">{{ job.duration }}</span> s</dd>
+    <dt>worker</dt><dd><code>{{ job.worker_id|default:"—" }}</code></dd>
+  </dl>
+
+  {% if job.error %}
+  <div class="flash flash-error" id="job-error"><span>{{ job.error }}</span></div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>日志</h2>
+    <button class="btn btn-xs" data-copy-target="job-log">复制</button>
+  </div>
+  <pre class="console" id="job-log">{{ job.log }}</pre>
+</section>
+
+{% if job.result %}
+<section class="card">
+  <div class="card-head"><h2>结果</h2></div>
+  <pre class="console small">{{ job.result }}</pre>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const jobId = {{ job.pk }};
+  const logEl = document.getElementById('job-log');
+  const progressEl = document.getElementById('job-progress');
+  const percentEl = document.getElementById('job-percent');
+  const statusEl = document.getElementById('job-status');
+  const durationEl = document.getElementById('job-duration');
+
+  let offset = logEl.textContent.length;
+  let finished = {{ job.is_finished|yesno:"true,false" }};
+
+  function nearBottom() {
+    return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 60;
+  }
+
+  function paintStatus(status, label) {
+    const map = { running: 'running', succeeded: 'ok', failed: 'failed', canceled: 'off', queued: 'queued' };
+    statusEl.className = `pill pill-${map[status] || 'unknown'}`;
+    statusEl.innerHTML = status === 'running'
+      ? `<span class="spinner tiny"></span>${label}`
+      : `<i></i>${label}`;
+  }
+
+  async function tick() {
+    if (finished) return;
+    try {
+      const data = await window.vmm.get(`/api/v1/jobs/${jobId}/log/?offset=${offset}`);
+
+      if (data.chunk) {
+        const stick = nearBottom();
+        logEl.textContent += data.chunk;
+        offset = data.offset;
+        if (stick) logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      progressEl.style.width = `${data.progress}%`;
+      percentEl.textContent = `${data.progress}%`;
+      durationEl.textContent = data.duration;
+      paintStatus(data.status, data.status_display);
+
+      if (data.finished) {
+        finished = true;
+        window.vmm.toast(
+          `任务${data.status_display}`,
+          data.status === 'succeeded' ? 'ok' : 'err'
+        );
+        if (data.error) {
+          window.vmm.toast(data.error, 'err', 8000);
+        }
+        return;
+      }
+      setTimeout(tick, 1500);
+    } catch (err) {
+      setTimeout(tick, 4000);
+    }
+  }
+
+  if (!finished) {
+    offset = 0;
+    logEl.textContent = '';
+    tick();
+  }
+
+  document.querySelectorAll('[data-action="job-cancel"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('确定取消这个任务？')) return;
+      try {
+        await window.vmm.post(btn.dataset.url, {});
+        window.vmm.toast('已请求取消，任务将在下一个检查点退出', 'ok');
+      } catch (err) {
+        window.vmm.toast(err.message, 'err');
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

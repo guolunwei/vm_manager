@@ -1,0 +1,11 @@
+.env
+data/
+config.ini
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.log
+.vmrun.lock
+.pytest_cache/
+.ruff_cache/

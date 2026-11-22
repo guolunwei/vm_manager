@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}任务 · {{ site_name }}{% endblock %}
+{% block heading %}任务{% endblock %}
+{% block subheading %}
+  <p class="muted">所有耗时操作都在后台执行，这里可以查看完整日志</p>
+{% endblock %}
+
+{% block topbar %}
+  <button class="btn" data-action="sync" data-url="{% url 'dashboard' %}">同步磁盘</button>
+{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="filter-row">
+    <div class="filter-chips" id="status-chips">
+      <a class="chip {% if not status %}selected{% endif %}" href="{% url 'jobs' %}{% if kind %}?kind={{ kind }}{% endif %}">全部</a>
+      {% for value, label in statuses %}
+      <a class="chip {% if status == value %}selected{% endif %}"
+         href="?status={{ value }}{% if kind %}&amp;kind={{ kind }}{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" class="filter-form">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+      <select name="kind" class="input" onchange="this.form.submit()">
+        <option value="">全部类型</option>
+        {% for value, label in kinds %}
+        <option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if jobs %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>类型</th>
+          <th>对象</th>
+          <th>状态</th>
+          <th>发起人</th>
+          <th>开始时间</th>
+          <th class="right">耗时</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td class="muted">#{{ job.pk }}</td>
+          <td><a href="{% url 'job_detail' job.pk %}">{{ job.get_kind_display }}</a></td>
+          <td>
+            {% if job.vm %}
+              <a href="{% url 'vm_detail' job.vm.pk %}">{{ job.label|default:job.vm.name }}</a>
+            {% else %}
+              {{ job.label|default:"—" }}
+            {% endif %}
+          </td>
+          <td>
+            <span class="pill pill-{{ job.status_css }}">
+              {% if job.status == 'running' %}<span class="spinner tiny"></span>{% else %}<i></i>{% endif %}
+              {{ job.get_status_display }}
+            </span>
+          </td>
+          <td class="muted">{{ job.created_by.username|default:"系统" }}</td>
+          <td class="muted nowrap">{{ job.queued_at|date:"m-d H:i:s" }}</td>
+          <td class="right muted">{{ job.duration }}s</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+  <div class="pager">
+    {% if page_obj.has_previous %}<a class="btn btn-sm" href="?page={{ page_obj.previous_page_number }}">上一页</a>{% endif %}
+    <span class="muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+    {% if page_obj.has_next %}<a class="btn btn-sm" href="?page={{ page_obj.next_page_number }}">下一页</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">≡</div>
+    <h3>还没有任务</h3>
+    <p class="muted">执行开机、创建或同步磁盘等操作后，这里会出现记录。</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

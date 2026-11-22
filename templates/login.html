@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}登录 · {{ site_name }}{% endblock %}
+
+{% block auth_content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark big">VM</span>
+      <h1>VM Manager</h1>
+      <p>用模板和规格批量管理 VMware Workstation 虚拟机</p>
+    </div>
+
+    <form method="post" class="auth-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+      <div class="flash flash-error">
+        {% for error in form.non_field_errors %}<span>{{ error }}</span>{% endfor %}
+      </div>
+      {% endif %}
+
+      <label class="field">
+        <span class="field-label">用户名</span>
+        {{ form.username }}
+        {% if form.username.errors %}<em class="field-error">{{ form.username.errors.0 }}</em>{% endif %}
+      </label>
+
+      <label class="field">
+        <span class="field-label">密码</span>
+        {{ form.password }}
+        {% if form.password.errors %}<em class="field-error">{{ form.password.errors.0 }}</em>{% endif %}
+      </label>
+
+      <button type="submit" class="btn btn-primary btn-block">登录</button>
+    </form>
+
+    <p class="auth-hint">首次使用请运行<br><code>python manage.py bootstrap</code><br>创建管理员账号</p>
+  </div>
+</div>
+{% endblock %}

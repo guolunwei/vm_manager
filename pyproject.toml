@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vmmanager"
+version = "0.2.0"
+description = "Web 控制台：用模板和规格批量管理 VMware Workstation 虚拟机"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "vmmanager contributors" }]
+keywords = ["vmware", "workstation", "vmrun", "virtualization", "django", "homelab"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "Django>=6.0",
+    "djangorestframework>=3.15",
+    "whitenoise>=6.6",
+    "waitress>=3.0; platform_system == 'Windows'",
+    "gunicorn>=21.0; platform_system != 'Windows'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+vmmanager-worker = "vmmanager.jobs.worker:main"
+
+[project.urls]
+Homepage = "https://github.com/"
+Documentation = "https://github.com/"
+
+[tool.setuptools]
+packages = [
+    "config",
+    "config.settings",
+    "vmmanager",
+    "vmmanager.models",
+    "vmmanager.services",
+    "vmmanager.jobs",
+    "vmmanager.web",
+    "vmmanager.api",
+]
+include-package-data = true
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py"]
+testpaths = ["vmmanager/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*" = ["F401", "E501"]
+"config/settings/*" = ["F403", "F405"]

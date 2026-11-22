@@ -1,0 +1,36 @@
+# VM Manager —— 后台任务 worker
+#
+#   sudo cp deploy/vmmanager-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now vmmanager-worker
+#
+# worker 可以起多个实例（队列抢占是原子的，不会重复执行），
+# 但同一台虚拟机上的操作仍会按 vm 串行，所以几台 worker 就够几十台虚拟机用了。
+
+[Unit]
+Description=VM Manager Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vmmanager
+Group=vmmanager
+WorkingDirectory=/opt/vm_manager
+Environment=DJANGO_SETTINGS_MODULE=config.settings.prod
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/opt/vm_manager/.venv/bin/python manage.py worker
+
+Restart=always
+RestartSec=5
+# 关机时给正在执行的任务留出收尾时间（软关机最多等 SOFT_STOP_GRACE 秒）
+KillSignal=SIGTERM
+TimeoutStopSec=90
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vmmanager-worker
+
+[Install]
+WantedBy=multi-user.target

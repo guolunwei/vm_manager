@@ -1,0 +1,155 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>控制台 · {{ vm.name }} · {{ site_name }}</title>
+  <style>
+    /* 控制台页独立于主样式表：全屏黑底是它的常态，塞进主布局反而碍事 */
+    :root { --bar-h: 46px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: flex; flex-direction: column;
+      background: #101418; color: #d7dde3;
+      font: 13px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .bar {
+      height: var(--bar-h); flex: none; display: flex; align-items: center;
+      gap: 12px; padding: 0 14px;
+      background: #171c22; border-bottom: 1px solid #232a32;
+    }
+    .bar .name { font-weight: 650; font-size: 13.5px; }
+    .bar .state { color: #8b98a5; font-size: 12px; }
+    .bar .spacer { flex: 1; }
+    .bar a, .bar button {
+      color: #d7dde3; text-decoration: none; font-size: 12.5px;
+      background: #1f262e; border: 1px solid #2c3540; border-radius: 6px;
+      padding: 5px 11px; cursor: pointer;
+    }
+    .bar a:hover, .bar button:hover { background: #27303a; }
+    #screen-wrap { flex: 1; position: relative; overflow: hidden; }
+    #screen { width: 100%; height: 100%; }
+    .overlay {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px; text-align: center;
+      background: #101418; padding: 24px;
+    }
+    .overlay[hidden] { display: none; }
+    .overlay h2 { margin: 0; font-size: 16px; color: #e8edf2; }
+    .overlay p { margin: 0; color: #8b98a5; max-width: 460px; }
+    .overlay .hint code { color: #9ecbff; font-family: Consolas, monospace; }
+    .overlay a.btn, .overlay button.btn {
+      display: inline-block; margin-top: 6px; padding: 8px 18px;
+      background: #2563eb; color: #fff; border: 0; border-radius: 8px;
+      font-size: 13px; cursor: pointer; text-decoration: none;
+    }
+    .overlay a.btn:hover, .overlay button.btn:hover { background: #1d4fd8; }
+    .status { color: #f0b429; font-size: 12.5px; }
+    .status.err { color: #ef6a6a; }
+    .kbd-hint { color: #5d6a77; font-size: 11.5px; margin-top: 8px; }
+  </style>
+</head>
+<body data-ws-url="{{ ws_url }}" data-vnc-password="{{ cfg.password }}">
+  <div class="bar">
+    <span class="name">{{ vm.name }} 控制台</span>
+    <span class="state" id="conn-state">{% if mode == "ready" %}连接中…{% endif %}</span>
+    <span class="spacer"></span>
+    <button type="button" id="btn-ctrl-alt-del" hidden>发送 Ctrl+Alt+Del</button>
+    <a href="{% url 'vm_detail' vm.pk %}">← 返回详情</a>
+  </div>
+
+  <div id="screen-wrap">
+    <div id="screen"></div>
+
+    {% if mode == "offline" %}
+    <div class="overlay">
+      <h2>虚拟机没有在运行</h2>
+      <p>VMware 的 VNC 服务只在虚拟机运行期间监听。先开机，等系统起来再进控制台。</p>
+      <a class="btn" href="{% url 'vm_detail' vm.pk %}">去详情页开机</a>
+    </div>
+    {% elif mode == "needs-restart" %}
+    <div class="overlay">
+      <h2>VNC 需要完整开关机才能生效</h2>
+      <p>vmx 里已写入 VNC 配置（端口 <span class="hint"><code>{{ cfg.port }}</code></span>），
+         但 VMware 只在开机那一刻读取它，而且<strong>面板上的「重启」不会重读配置</strong>——
+         必须完整关机再开机。</p>
+      <form method="post" action="{% url 'vm_console' vm.pk %}">
+        {% csrf_token %}
+        <button class="btn" type="submit">关机并重新开机</button>
+      </form>
+      <p class="kbd-hint">也可以回详情页手动执行：先「关机」，完成后再「开机」。</p>
+    </div>
+    {% else %}
+    <div class="overlay" id="msg-connecting">
+      <h2>正在连接 {{ vm.name }}…</h2>
+      <p class="status" id="status-line">建立 WebSocket 连接（代理端口 {{ proxy_port }}）</p>
+    </div>
+    <div class="overlay" id="msg-failed" hidden>
+      <h2 id="fail-title">连接失败</h2>
+      <p id="fail-detail"></p>
+      <button class="btn" type="button" onclick="location.reload()">重试</button>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if mode == "ready" %}
+  <script type="module">
+    import RFB from "{% static 'vendor/novnc/core/rfb.js' %}";
+
+    const body = document.body;
+    const wsUrl = body.dataset.wsUrl;
+    const password = body.dataset.vncPassword;
+    const stateEl = document.getElementById("conn-state");
+    const statusLine = document.getElementById("status-line");
+    const connecting = document.getElementById("msg-connecting");
+    const failed = document.getElementById("msg-failed");
+    const cadBtn = document.getElementById("btn-ctrl-alt-del");
+
+    function fail(title, detail) {
+      connecting.hidden = true;
+      failed.hidden = false;
+      document.getElementById("fail-title").textContent = title;
+      document.getElementById("fail-detail").textContent = detail || "";
+      stateEl.textContent = "已断开";
+    }
+
+    let rfb;
+    try {
+      rfb = new RFB(document.getElementById("screen"), wsUrl, {
+        credentials: { password },
+        // 本地面板就这几种用途，共享连接避免"另一端已抢占"的困惑
+        shared: true,
+      });
+    } catch (err) {
+      fail("无法启动控制台", String(err));
+      throw err;
+    }
+
+    rfb.scaleViewport = true;     // 跟随窗口缩放
+    rfb.resizeSession = false;    // 不改客户机分辨率
+    rfb.background = "#101418";
+
+    rfb.addEventListener("connect", () => {
+      connecting.hidden = true;
+      cadBtn.hidden = false;
+      stateEl.textContent = "已连接";
+    });
+    rfb.addEventListener("disconnect", (ev) => {
+      const detail = (ev.detail && ev.detail.reason) || "";
+      cadBtn.hidden = true;
+      if (ev.detail && ev.detail.clean) {
+        fail("连接已断开", detail || "远程桌面会话结束。");
+      } else {
+        fail("连接失败", detail || "可能是代理没启动（serve 启动时会自动拉起），或虚拟机刚被关机。");
+      }
+    });
+    rfb.addEventListener("credentialsrequired", () => {
+      rfb.sendCredentials({ password });
+    });
+
+    cadBtn.addEventListener("click", () => rfb.sendCtrlAltDel());
+    window.addEventListener("beforeunload", () => { try { rfb.disconnect(); } catch (_) {} });
+  </script>
+  {% endif %}
+</body>
+</html>

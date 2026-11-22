@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% load ui_extras %}
+
+{% block title %}虚拟机 · {{ site_name }}{% endblock %}
+{% block heading %}虚拟机{% endblock %}
+{% block subheading %}
+  <p class="muted">{{ vm_base_dir }}</p>
+{% endblock %}
+
+{% block topbar %}
+  <button class="btn" data-action="sync" data-url="{% url 'dashboard' %}">
+    <span class="ico">⟳</span> 同步磁盘
+  </button>
+  {% if can_create %}
+  <a class="btn btn-primary" href="{% url 'vm_create' %}">＋ 新建虚拟机</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+{% if running_templates %}
+<div class="flash flash-warning" style="margin-bottom:14px">
+  <span>
+    {{ running_templates|length }} 个模板正在运行：
+    <strong>{% for t in running_templates %}{{ t.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</strong>
+    — 运行中的模板不计入上方的「运行中」统计，且会让链接克隆的基础磁盘偏离其快照。
+  </span>
+  {% if user.is_staff %}
+  <a class="btn btn-xs" href="{% url 'settings' %}">去关机</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if worker_offline %}
+<div class="flash flash-error" style="margin-bottom:14px">
+  <span>
+    <strong>没有 worker 在消费任务队列。</strong>
+    {{ pending_jobs }} 个任务排队中，但未检测到在线 worker —— 它们不会自行启动。
+    请在服务器上启动：<code>python manage.py worker</code>
+  </span>
+</div>
+{% endif %}
+
+<section class="overview">
+  <div class="stat-row">
+    <div class="stat">
+      <span class="stat-label">总数</span>
+      <strong>{{ counts.total|default:0 }}</strong>
+    </div>
+    <div class="stat">
+      <span class="stat-label">运行中</span>
+      <strong class="c-ok">{{ counts.running|default:0 }}</strong>
+    </div>
+    <div class="stat">
+      <span class="stat-label">已停止</span>
+      <strong>{{ counts.stopped|default:0 }}</strong>
+    </div>
+    <div class="stat">
+      <span class="stat-label">IP 未探测</span>
+      <strong class="{% if counts.no_ip %}c-warn{% endif %}">{{ counts.no_ip|default:0 }}</strong>
+    </div>
+  </div>
+
+  <div class="card host-card">
+    <div class="host-meter">
+      <div class="host-meter-head">
+        <span>宿主内存</span>
+        <strong>
+          {% if host.memory_percent is not None %}
+            {{ host.memory_percent }}%
+            {% if host.memory_total_mb %}
+            <small>{{ host.memory_used_mb|floatformat:"0" }} / {{ host.memory_total_mb|floatformat:"0" }} MB</small>
+            {% endif %}
+          {% else %}—{% endif %}
+        </strong>
+      </div>
+      <div class="meter">
+        <i class="meter-{{ host.memory_percent|level_class|default:'none' }}"
+           style="width: {% if host.memory_percent is not None %}{{ host.memory_percent }}{% else %}0{% endif %}%"></i>
+      </div>
+    </div>
+    <div class="host-meter">
+      <div class="host-meter-head">
+        <span>宿主 CPU</span>
+        <strong>{% if host.cpu_percent is not None %}{{ host.cpu_percent }}%{% else %}—{% endif %}</strong>
+      </div>
+      <div class="meter">
+        <i class="meter-{{ host.cpu_percent|level_class|default:'none' }}"
+           style="width: {% if host.cpu_percent is not None %}{{ host.cpu_percent }}{% else %}0{% endif %}%"></i>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if active_jobs %}
+<section class="card job-strip">
+  <div class="card-head">
+    <h2>进行中</h2>
+    <span class="muted">{{ active_jobs|length }} 个任务</span>
+  </div>
+  <ul class="job-list">
+    {% for job in active_jobs %}
+    <li>
+      <a href="{% url 'job_detail' job.pk %}">
+        <span class="dot dot-{{ job.status_css }}"></span>
+        <strong>{{ job.get_kind_display }}</strong>
+        <span class="muted">{{ job.label }}</span>
+      </a>
+      <div class="mini-progress"><i style="width: {{ job.progress }}%"></i></div>
+      <span class="muted">{{ job.progress }}%</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <form method="get" class="toolbar">
+    <input type="search" name="q" value="{{ keyword }}" placeholder="搜索名称 / hostname / IP" class="input search">
+    <select name="state" class="input" onchange="this.form.submit()">
+      <option value="">全部状态</option>
+      {% for value, label in states %}
+      <option value="{{ value }}" {% if state == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="template" class="input" onchange="this.form.submit()">
+      <option value="">全部模板</option>
+      {% for t in templates %}
+      <option value="{{ t.pk }}" {% if template_id == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+    {% if keyword or state or template_id %}
+    <a class="btn btn-ghost" href="{% url 'dashboard' %}">清空筛选</a>
+    {% endif %}
+  </form>
+
+  {% if vms %}
+  <div class="bulk-bar" id="bulk-bar" hidden>
+    <span class="muted">已选 <strong id="bulk-count">0</strong> 台：</span>
+    <button class="btn btn-sm" data-bulk="start">开机</button>
+    <button class="btn btn-sm" data-bulk="stop">关机</button>
+    <button class="btn btn-sm" data-bulk="reset">重启</button>
+    <button class="btn btn-sm" data-bulk="suspend">挂起</button>
+    {% if user.is_staff %}
+    <button class="btn btn-sm btn-danger" data-bulk="delete">删除</button>
+    {% endif %}
+    <span class="muted" id="bulk-hint"></span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="check-all" title="全选本页"></th>
+          <th>名称</th>
+          <th>状态</th>
+          <th>IP 地址</th>
+          <th>规格</th>
+          <th>模板</th>
+          <th>创建时间</th>
+          <th class="right">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for vm in vms %}
+        <tr>
+          <td class="col-check"><input type="checkbox" class="row-check" value="{{ vm.pk }}"></td>
+          <td>
+            <a class="vm-name" href="{% url 'vm_detail' vm.pk %}">{{ vm.name }}</a>
+            <span class="sub">{{ vm.hostname|default:"—" }}</span>
+          </td>
+          <td>
+            <span class="pill pill-{{ vm.state_css }}">
+              <i></i>{{ vm.get_power_state_display }}
+            </span>
+            {% if vm.pending_jobs %}
+              <span class="pill pill-queued" title="已有任务排队，操作将按顺序执行">
+                <i></i>{{ vm.pending_jobs }} 个任务
+              </span>
+            {% endif %}
+          </td>
+          <td>
+            {% if vm.ip_address %}
+              <code class="ip">{{ vm.ip_address }}</code>
+            {% elif vm.is_running %}
+              <span class="muted">未探测</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td class="nowrap">{{ vm.spec_display }}</td>
+          <td class="muted nowrap">{{ vm.template.name|default:"—" }}</td>
+          <td class="muted nowrap">{{ vm.created_at|date:"m-d H:i" }}</td>
+          <td class="right nowrap">
+            {% if vm.is_running %}
+              <button class="btn btn-sm" data-action="vm-action" data-op="stop"
+                      data-url="{% url 'vm_action' vm.pk 'stop' %}" data-name="{{ vm.name }}">关机</button>
+              <button class="btn btn-sm" data-action="vm-action" data-op="reset"
+                      data-url="{% url 'vm_action' vm.pk 'reset' %}" data-name="{{ vm.name }}">重启</button>
+            {% else %}
+              <button class="btn btn-sm btn-primary" data-action="vm-action" data-op="start"
+                      data-url="{% url 'vm_action' vm.pk 'start' %}" data-name="{{ vm.name }}">开机</button>
+            {% endif %}
+            {% if vm.is_running and not vm.ip_address %}
+            <button class="btn btn-sm" data-action="vm-action" data-op="probe-ip"
+                    data-url="{% url 'vm_action' vm.pk 'probe-ip' %}" data-name="{{ vm.name }}">探测 IP</button>
+            {% endif %}
+            <a class="btn btn-sm btn-ghost" href="{% url 'vm_detail' vm.pk %}">详情</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+  <div class="pager">
+    {% if page_obj.has_previous %}
+    <a class="btn btn-sm" href="?page={{ page_obj.previous_page_number }}{% if keyword %}&q={{ keyword }}{% endif %}{% if state %}&state={{ state }}{% endif %}">上一页</a>
+    {% endif %}
+    <span class="muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+    {% if page_obj.has_next %}
+    <a class="btn btn-sm" href="?page={{ page_obj.next_page_number }}{% if keyword %}&q={{ keyword }}{% endif %}{% if state %}&state={{ state }}{% endif %}">下一页</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">▤</div>
+    {% if keyword or state or template_id %}
+      <h3>没有符合条件的虚拟机</h3>
+      <p class="muted">换个关键词试试，或清空筛选条件。</p>
+      <a class="btn" href="{% url 'dashboard' %}">清空筛选</a>
+    {% else %}
+      <h3>还没有虚拟机</h3>
+      <p class="muted">可以用「同步磁盘」扫描已有的 VM，也可以新建一台。</p>
+      <button class="btn" data-action="sync" data-url="{% url 'dashboard' %}">同步磁盘</button>
+      {% if can_create %}<a class="btn btn-primary" href="{% url 'vm_create' %}">＋ 新建虚拟机</a>{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% if recent_jobs %}
+<section class="card">
+  <div class="card-head">
+    <h2>最近任务</h2>
+    <a class="link" href="{% url 'jobs' %}">全部任务 →</a>
+  </div>
+  <ul class="job-list">
+    {% for job in recent_jobs %}
+    <li>
+      <a href="{% url 'job_detail' job.pk %}">
+        <span class="dot dot-{{ job.status_css }}"></span>
+        <strong>#{{ job.pk }} {{ job.get_kind_display }}</strong>
+        <span class="muted">{{ job.label|default:"—" }}</span>
+      </a>
+      <span class="muted">{{ job.duration }}s</span>
+      <span class="pill pill-{{ job.status_css }}">{{ job.get_status_display }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

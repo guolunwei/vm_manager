@@ -1,0 +1,103 @@
+{% load static %}{% load ui_extras %}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v={% static_ver 'css/app.css' %}">
+</head>
+<body>
+{% if user.is_authenticated %}
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">VM</span>
+      <div class="brand-text">
+        <strong>VM Manager</strong>
+        <small>v{{ app_version }}</small>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">管理</div>
+      <a href="{% url 'dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <span class="ico">▤</span> 虚拟机
+      </a>
+      <a href="{% url 'vm_create' %}" class="nav-item {% if request.resolver_match.url_name == 'vm_create' or request.resolver_match.url_name == 'vm_batch' %}active{% endif %}">
+        <span class="ico">＋</span> 新建
+      </a>
+      <a href="{% url 'jobs' %}" class="nav-item {% if request.resolver_match.url_name == 'jobs' or request.resolver_match.url_name == 'job_detail' %}active{% endif %}">
+        <span class="ico">≡</span> 任务
+        {% if active_job_count %}<em class="badge pulse">{{ active_job_count }}</em>{% endif %}
+      </a>
+      <div class="nav-group">资源</div>
+      <a href="{% url 'network' %}" class="nav-item {% if request.resolver_match.url_name == 'network' %}active{% endif %}">
+        <span class="ico">⇄</span> 网络
+      </a>
+      <a href="{% url 'settings' %}" class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+        <span class="ico">⚙</span> 设置
+      </a>
+      {% if user.is_staff %}
+      <a href="{% url 'audit' %}" class="nav-item {% if request.resolver_match.url_name == 'audit' %}active{% endif %}">
+        <span class="ico">◎</span> 审计
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-foot">
+      {% if running_job %}
+      <a class="running-card" href="{% url 'job_detail' running_job.pk %}">
+        <span class="spinner"></span>
+        <div class="running-text">
+          <strong>{{ running_job.get_kind_display }}</strong>
+          <small>{{ running_job.label|default:"处理中" }} · {{ running_job.progress }}%</small>
+        </div>
+      </a>
+      {% endif %}
+      <div class="user-box">
+        <div class="avatar">{{ user.username|slice:":1"|upper }}</div>
+        <div class="user-meta">
+          <strong>{{ user.username }}</strong>
+          <small>{% if user.is_staff %}管理员{% else %}普通用户{% endif %}</small>
+        </div>
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="icon-btn" title="退出登录">⏻</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>{% block heading %}{% endblock %}</h1>
+        {% block subheading %}{% endblock %}
+      </div>
+      <div class="topbar-actions">{% block topbar %}{% endblock %}</div>
+    </header>
+
+    {% if messages %}
+    <div class="flash-stack">
+      {% for message in messages %}
+      <div class="flash flash-{{ message.tags|default:'info' }}">
+        <span>{{ message }}</span>
+        <button type="button" onclick="this.parentElement.remove()">×</button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="content">{% block content %}{% endblock %}</div>
+  </main>
+</div>
+{% else %}
+{% block auth_content %}{% endblock %}
+{% endif %}
+
+<form id="csrf-holder" hidden>{% csrf_token %}</form>
+<div id="toast-root" class="toast-root"></div>
+<script src="{% static 'js/app.js' %}?v={% static_ver 'js/app.js' %}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

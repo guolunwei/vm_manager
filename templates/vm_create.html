@@ -1,0 +1,560 @@
+{% extends "base.html" %}
+
+{% block title %}新建虚拟机 · {{ site_name }}{% endblock %}
+{% block heading %}新建虚拟机{% endblock %}
+{% block subheading %}
+  <p class="muted">一行一台 VM：单行提交即单台创建，多行提交即批量创建；每行可单独覆盖模板和规格</p>
+{% endblock %}
+
+{% block topbar %}
+  <a class="btn btn-ghost" href="{% url 'dashboard' %}">返回列表</a>
+{% endblock %}
+
+{% block content %}
+{% if not templates %}
+<section class="card empty">
+  <div class="empty-icon">⚠</div>
+  <h3>没有可用模板</h3>
+  <p class="muted">创建 VM 需要一个带快照的模板（黄金 VM）。请先在设置页添加模板。</p>
+  <a class="btn btn-primary" href="{% url 'settings' %}">去添加模板</a>
+</section>
+{% else %}
+
+{{ templates_json|json_script:"templates-data" }}
+{{ flavors_json|json_script:"flavors-data" }}
+
+<section class="card">
+  <div class="card-head">
+    <h2>初始配置</h2>
+    <span class="muted">新加的行会按这份配置预填；此处修改不影响已添加的行</span>
+  </div>
+
+  <div class="batch-config">
+    <label class="field">
+      <span class="field-label">默认模板</span>
+      <select class="input" id="f-template">
+        {% for t in templates %}
+        <option value="{{ t.pk }}"
+                data-cpus="{{ t.default_cpus }}"
+                data-memory="{{ t.default_memory_mb }}"
+                {% if selected and selected.pk == t.pk %}selected{% endif %}>
+          {{ t.name }} · {{ t.default_spec_display }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">默认克隆方式</span>
+      <select class="input" id="f-clone">
+        <option value="linked" selected>链接克隆（省磁盘）</option>
+        <option value="full">完整克隆（独立磁盘）</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">默认 vCPU</span>
+      <input class="input" type="number" id="f-cpus" min="1" max="128"
+             value="{{ selected.default_cpus|default:2 }}">
+    </label>
+
+    <label class="field">
+      <span class="field-label">默认内存 (MB)</span>
+      <input class="input" type="number" id="f-memory" min="256" step="256"
+             value="{{ selected.default_memory_mb|default:4096 }}">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Guest 密码</span>
+      <input class="input" type="password" id="f-password" autocomplete="new-password"
+             placeholder="留空则沿用模板的密码">
+    </label>
+
+    <label class="field field-check">
+      <span class="field-label">&nbsp;</span>
+      <label class="check-line">
+        <input type="checkbox" id="f-sshkey" checked> 下发本机 SSH 公钥
+      </label>
+    </label>
+  </div>
+
+  <div class="flavor-chips" id="flavor-chips">
+    <span class="field-label">规格预设</span>
+    <button class="chip selected" type="button" data-cpus="" data-memory="">自定义</button>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>机器清单</h2>
+    <span class="muted" id="row-count">0 台 VM</span>
+  </div>
+
+  <div class="batch-toolbar">
+    <button class="btn btn-primary" type="button" id="t-add">＋ 加一行</button>
+    <button class="btn" type="button" id="t-gen">批量加行</button>
+    <button class="btn" type="button" id="t-paste">粘贴导入</button>
+    <button class="btn" type="button" id="t-apply" title="把初始配置重新套用到所有行">应用初始配置</button>
+    <span class="flex-spacer"></span>
+    <button class="btn btn-ghost danger-text" type="button" id="t-clear">清空</button>
+  </div>
+
+  <div class="batch-import" id="gen-strip" hidden>
+    <div class="gen-fields">
+      <label class="field">
+        <span class="field-label">名称前缀</span>
+        <input class="input" id="g-prefix" value="vm-" placeholder="如 web-">
+      </label>
+      <label class="field">
+        <span class="field-label">起始编号</span>
+        <input class="input" type="number" id="g-start" value="1" min="0">
+      </label>
+      <label class="field">
+        <span class="field-label">补零位数</span>
+        <input class="input" type="number" id="g-pad" value="2" min="1" max="6">
+      </label>
+      <label class="field">
+        <span class="field-label">数量</span>
+        <input class="input" type="number" id="g-count" value="3" min="1" max="{{ max_rows }}">
+      </label>
+      <div class="field">
+        <span class="field-label">&nbsp;</span>
+        <button class="btn btn-primary" type="button" id="g-generate">追加到表格</button>
+      </div>
+    </div>
+    <div class="import-hint muted small">生成的行会<strong>追加</strong>到表格末尾，规格按上方初始配置预填。</div>
+  </div>
+
+  <div class="batch-import" id="import-strip" hidden>
+    <textarea class="input" id="import-text" rows="4"
+              placeholder="每行一台 VM，列之间用空格或 Tab 分隔：&#10;web-01 2 4096 192.168.47.50&#10;web-02 4 8192&#10;db-01"></textarea>
+    <div class="import-hint muted small">
+      名称必填；vCPU / 内存 / IP 可选（缺的列按初始配置填充）。
+      也可以在 Excel 里选中若干行，直接 Ctrl+V 粘贴到这里。
+    </div>
+    <div class="import-actions">
+      <button class="btn btn-primary" type="button" id="t-import">导入</button>
+    </div>
+  </div>
+
+  <div class="table-wrap" id="table-wrap" hidden>
+    <table class="table batch-table">
+      <thead>
+        <tr>
+          <th style="width:44px">#</th>
+          <th>名称</th>
+          <th style="width:200px">模板</th>
+          <th style="width:92px">vCPU</th>
+          <th style="width:120px">内存 (MB)</th>
+          <th style="width:170px">克隆方式</th>
+          <th style="width:170px">IP（留空自动分配）</th>
+          <th style="width:48px"></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="empty" id="rows-empty">
+    <div class="empty-icon">▤</div>
+    <h3>表格还是空的</h3>
+    <p class="muted">点「＋ 加一行」添加一台 VM，或用「批量加行 / 粘贴导入」一次填入多行。</p>
+  </div>
+</section>
+
+<div class="batch-actions">
+  <div class="batch-summary" id="summary">待创建 0 台 VM</div>
+  <div class="batch-buttons">
+    <span class="muted small" id="limit-hint">每批最多 {{ max_rows }} 台 VM</span>
+    <button class="btn btn-primary" type="button" id="submit-batch">提交创建</button>
+  </div>
+</div>
+
+<div class="card" id="result-card" hidden>
+  <div class="card-head">
+    <h2>提交结果</h2>
+  </div>
+  <div id="result-body"></div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  const MAX_ROWS = {{ max_rows }};
+  const TEMPLATES = JSON.parse(document.getElementById("templates-data").textContent);
+  const FLAVORS = JSON.parse(document.getElementById("flavors-data").textContent);
+
+  const rowsEl = document.getElementById("rows");
+  const emptyEl = document.getElementById("rows-empty");
+  const countEl = document.getElementById("row-count");
+  const summaryEl = document.getElementById("summary");
+  const resultCard = document.getElementById("result-card");
+  const resultBody = document.getElementById("result-body");
+  const submitBtn = document.getElementById("submit-batch");
+
+  const templateSel = document.getElementById("f-template");
+  const cloneEl = document.getElementById("f-clone");
+  const cpusEl = document.getElementById("f-cpus");
+  const memoryEl = document.getElementById("f-memory");
+  const genStrip = document.getElementById("gen-strip");
+  const importStrip = document.getElementById("import-strip");
+  const importText = document.getElementById("import-text");
+
+  function templateById(id) {
+    return TEMPLATES.find((t) => t.id === Number(id)) || TEMPLATES[0];
+  }
+
+  // ------------------------------------------------------------- 初始配置
+  function defaults() {
+    const tpl = templateById(templateSel.value);
+    return {
+      template_id: tpl ? tpl.id : null,
+      cpus: Number(cpusEl.value) || 2,
+      memory: Number(memoryEl.value) || 4096,
+      clone: cloneEl.value || "linked",
+    };
+  }
+
+  // 模板变了，默认规格跟着模板走（只影响新行）
+  templateSel.addEventListener("change", () => {
+    const opt = templateSel.selectedOptions[0];
+    if (!opt) return;
+    cpusEl.value = opt.dataset.cpus || 2;
+    memoryEl.value = opt.dataset.memory || 4096;
+    paintFlavorChips("");
+  });
+
+  // 规格预设 chips：点了直接改默认 vCPU / 内存
+  const chipWrap = document.getElementById("flavor-chips");
+  // 名字里已带规格（如 "2C4G"）就不再重复拼一遍
+  function chipLabel(f) {
+    return /\d+\s*[cC]|\d+\s*[gG]/.test(f.name) ? f.name : f.name + " · " + f.cpus + "C/" + f.memory + "M";
+  }
+  FLAVORS.forEach((f) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.dataset.cpus = f.cpus;
+    chip.dataset.memory = f.memory;
+    chip.textContent = chipLabel(f);
+    chipWrap.appendChild(chip);
+  });
+  function paintFlavorChips(active) {
+    chipWrap.querySelectorAll(".chip").forEach((chip) => {
+      const match = active
+        ? chip.dataset.cpus === String(active.cpus) && chip.dataset.memory === String(active.memory)
+        : !chip.dataset.cpus;
+      chip.classList.toggle("selected", !!match);
+    });
+  }
+  chipWrap.addEventListener("click", (event) => {
+    const chip = event.target.closest(".chip");
+    if (!chip) return;
+    if (chip.dataset.cpus) {
+      cpusEl.value = chip.dataset.cpus;
+      memoryEl.value = chip.dataset.memory;
+    }
+    paintFlavorChips({
+      cpus: chip.dataset.cpus,
+      memory: chip.dataset.memory,
+    });
+  });
+  [cpusEl, memoryEl].forEach((el) => el.addEventListener("input", () => paintFlavorChips("")));
+
+  function nextName() {
+    // 沿用 "vm-NN" 递增，撞上了就往后找
+    const n = rowsEl.querySelectorAll("tr").length + 1;
+    for (let i = n; i < n + 200; i += 1) {
+      const candidate = "vm-" + String(i).padStart(2, "0");
+      const taken = Array.from(rowsEl.querySelectorAll(".row-name"))
+        .some((el) => el.value.trim().toLowerCase() === candidate);
+      if (!taken) return candidate;
+    }
+    return "";
+  }
+
+  // ------------------------------------------------------------- 行管理
+  function renumber() {
+    const rows = rowsEl.querySelectorAll("tr");
+    rows.forEach((tr, i) => {
+      tr.querySelector(".row-index").textContent = i + 1;
+    });
+    const total = rows.length;
+    countEl.textContent = total + " 台 VM";
+    summaryEl.textContent = "待创建 " + total + " 台 VM";
+    emptyEl.style.display = total ? "none" : "";
+    document.getElementById("table-wrap").hidden = total === 0;
+    submitBtn.disabled = total === 0;
+  }
+
+  function templateOptions(selectedId) {
+    return TEMPLATES.map((t) =>
+      '<option value="' + t.id + '"' +
+      (Number(selectedId) === t.id ? " selected" : "") + ">" +
+      t.name + " (" + t.cpus + "C/" + t.memory + "M)</option>"
+    ).join("");
+  }
+
+  function addRow(data) {
+    if (rowsEl.querySelectorAll("tr").length >= MAX_ROWS) {
+      window.vmm.toast("每批最多 " + MAX_ROWS + " 行，请分批提交", "err");
+      return false;
+    }
+    const d = defaults();
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td class="row-index"></td>' +
+      '<td><input class="input row-name" value="" placeholder="vm-01"></td>' +
+      '<td><select class="input row-template">' + templateOptions(d.template_id) + "</select></td>" +
+      '<td><input class="input row-cpus" type="number" min="1" max="128"></td>' +
+      '<td><input class="input row-memory" type="number" min="256" step="256"></td>' +
+      '<td><select class="input row-clone">' +
+        '<option value="linked">链接克隆</option>' +
+        '<option value="full">完整克隆</option>' +
+      "</select></td>" +
+      '<td><input class="input row-ip" placeholder="自动"></td>' +
+      '<td class="right"><button class="chip-act danger row-del" type="button" title="删除这一行">×</button></td>';
+    tr.querySelector(".row-name").value = data && data.name || "";
+    if (data && data.template_id) tr.querySelector(".row-template").value = data.template_id;
+    tr.querySelector(".row-cpus").value = (data && data.cpus) || d.cpus;
+    tr.querySelector(".row-memory").value = (data && data.memory) || d.memory;
+    tr.querySelector(".row-clone").value = (data && data.clone) || d.clone;
+    tr.querySelector(".row-ip").value = data && data.ip || "";
+    rowsEl.appendChild(tr);
+    renumber();
+    return true;
+  }
+
+  // 把初始配置刷进所有已有行
+  function applyDefaults() {
+    const d = defaults();
+    rowsEl.querySelectorAll("tr").forEach((tr) => {
+      tr.querySelector(".row-template").value = d.template_id;
+      tr.querySelector(".row-cpus").value = d.cpus;
+      tr.querySelector(".row-memory").value = d.memory;
+      tr.querySelector(".row-clone").value = d.clone;
+    });
+    window.vmm.toast("已把初始配置套用到所有行", "ok");
+  }
+
+  // ------------------------------------------------------------- 工具条
+  document.getElementById("t-add").addEventListener("click", () => {
+    if (!addRow({ name: nextName() })) return;
+    const last = rowsEl.querySelector("tr:last-child .row-name");
+    if (last) { last.focus(); last.select(); }
+  });
+
+  document.getElementById("t-apply").addEventListener("click", applyDefaults);
+
+  document.getElementById("t-clear").addEventListener("click", () => {
+    if (rowsEl.querySelectorAll("tr").length &&
+        !window.confirm("确定清空表格里的所有行？")) return;
+    rowsEl.innerHTML = "";
+    renumber();
+  });
+
+  function toggleStrip(strip) {
+    [genStrip, importStrip].forEach((s) => { if (s !== strip) s.hidden = true; });
+    strip.hidden = !strip.hidden;
+    if (!strip.hidden) {
+      const focusEl = strip.querySelector("input, textarea");
+      if (focusEl) focusEl.focus();
+    }
+  }
+  document.getElementById("t-gen").addEventListener("click", () => toggleStrip(genStrip));
+  document.getElementById("t-paste").addEventListener("click", () => toggleStrip(importStrip));
+
+  // 批量加行：按前缀生成，追加到表格末尾
+  document.getElementById("g-generate").addEventListener("click", () => {
+    const prefix = document.getElementById("g-prefix").value.trim() || "vm-";
+    const start = Number(document.getElementById("g-start").value) || 1;
+    const pad = Math.min(6, Math.max(1, Number(document.getElementById("g-pad").value) || 2));
+    let count = Number(document.getElementById("g-count").value) || 1;
+    count = Math.min(count, MAX_ROWS - rowsEl.querySelectorAll("tr").length);
+    if (count <= 0) {
+      window.vmm.toast("表格已满（" + MAX_ROWS + " 行），请分批提交", "err");
+      return;
+    }
+    const used = new Set(
+      Array.from(rowsEl.querySelectorAll(".row-name")).map((el) => el.value.trim().toLowerCase()),
+    );
+    let added = 0;
+    for (let i = 0; i < count; i += 1) {
+      let name = prefix + String(start + i).padStart(pad, "0");
+      let seq = start + i;
+      while (used.has(name.toLowerCase())) {
+        seq += 1;
+        name = prefix + String(seq).padStart(pad, "0");
+      }
+      used.add(name.toLowerCase());
+      if (addRow({ name })) added += 1;
+    }
+    genStrip.hidden = true;
+    if (added) window.vmm.toast("已追加 " + added + " 行", "ok");
+  });
+
+  document.getElementById("t-import").addEventListener("click", () => {
+    importLines(importText.value);
+    importText.value = "";
+    importStrip.hidden = true;
+  });
+
+  // 解析 "名称 [vCPU] [内存] [IP]"，Tab 或空白分隔，Excel 粘贴直接可用
+  function parseLine(line) {
+    const parts = line.split(/\t|\s+/).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const out = { name: "", cpus: 0, memory: 0, ip: "" };
+    let expectSpec = true;
+    parts.forEach((p) => {
+      const ipLike = /^\d{1,3}(\.\d{1,3}){3}$/.test(p);
+      if (ipLike) { out.ip = p; return; }
+      if (expectSpec && /^\d+$/.test(p) && !out.cpus) { out.cpus = Number(p); return; }
+      if (expectSpec && /^\d+$/.test(p) && !out.memory) { out.memory = Number(p); return; }
+      if (!out.name) { out.name = p; expectSpec = false; return; }
+    });
+    return out;
+  }
+
+  function importLines(text) {
+    let added = 0;
+    (text || "").split(/\r?\n/).forEach((line) => {
+      const parsed = parseLine(line);
+      if (parsed && parsed.name) {
+        if (addRow(parsed)) added += 1;
+      }
+    });
+    if (added) {
+      window.vmm.toast("已导入 " + added + " 行", "ok");
+    } else {
+      window.vmm.toast("没有解析到有效行", "err");
+    }
+  }
+
+  // 全局粘贴：焦点不在输入框时 Ctrl+V 直接铺行
+  document.addEventListener("paste", (event) => {
+    const tag = (event.target.tagName || "").toLowerCase();
+    if (["input", "textarea", "select"].includes(tag)) return;
+    const text = (event.clipboardData || window.clipboardData).getData("text");
+    if (!text || !text.includes("\n")) return;
+    event.preventDefault();
+    importLines(text);
+  });
+
+  rowsEl.addEventListener("click", (event) => {
+    const btn = event.target.closest(".row-del");
+    if (!btn) return;
+    btn.closest("tr").remove();
+    renumber();
+  });
+
+  // ------------------------------------------------------------- 提交
+  function collect() {
+    const rows = [];
+    rowsEl.querySelectorAll("tr").forEach((tr) => {
+      rows.push({
+        name: tr.querySelector(".row-name").value.trim(),
+        template_id: Number(tr.querySelector(".row-template").value),
+        cpus: Number(tr.querySelector(".row-cpus").value) || 0,
+        memory_mb: Number(tr.querySelector(".row-memory").value) || 0,
+        clone_type: tr.querySelector(".row-clone").value,
+        ip: tr.querySelector(".row-ip").value.trim(),
+      });
+    });
+    return rows;
+  }
+
+  function csrfToken() {
+    const input = document.querySelector("#csrf-holder input[name=csrfmiddlewaretoken]");
+    if (input) return input.value;
+    const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function renderResult(data) {
+    resultCard.hidden = false;
+    let html = "";
+    if (data.created) {
+      html += '<p class="flash flash-success" style="margin-bottom:10px">已排队 ' + data.created +
+        ' 台 VM，将在后台按顺序创建。<a href="/jobs/">去任务页查看进度 →</a></p>';
+    }
+    if (data.error) {
+      html += '<p class="flash flash-error" style="margin-bottom:10px">' + escapeHtml(data.error) + "</p>";
+    }
+    if ((data.errors || []).length) {
+      html += '<p class="muted small">以下行提交失败：</p><ul class="plain-list">';
+      data.errors.forEach((e) => {
+        html += "<li><strong>" + escapeHtml(e.name || "第 " + e.index + " 行") +
+          "</strong> <span class=\"muted\">" + escapeHtml(e.message) + "</span></li>";
+      });
+      html += "</ul>";
+    }
+    resultBody.innerHTML = html;
+    resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  submitBtn.addEventListener("click", async () => {
+    const rows = collect();
+    if (!rows.length) return;
+
+    const blank = rows.findIndex((r) => !r.name);
+    if (blank >= 0) {
+      window.vmm.toast("第 " + (blank + 1) + " 行名称为空", "err");
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "提交中…";
+    try {
+      const response = await fetch("{% url 'vm_create' %}", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({
+          template_id: Number(templateSel.value),
+          clone_type: cloneEl.value,
+          cpus: Number(cpusEl.value),
+          memory_mb: Number(memoryEl.value),
+          deploy_ssh_key: document.getElementById("f-sshkey").checked,
+          guest_password: document.getElementById("f-password").value,
+          rows: rows,
+        }),
+      });
+      const data = await response.json();
+      renderResult(data);
+      if (data.created) {
+        // 成功的行从表格里移除，避免重复提交
+        rowsEl.querySelectorAll("tr").forEach((tr, i) => {
+          if (data.jobs.some((j) => j.name === rows[i].name)) tr.remove();
+        });
+        renumber();
+        window.vmm.toast("已排队 " + data.created + " 台 VM", "ok");
+      }
+    } catch (err) {
+      window.vmm.toast(err.message || "提交失败", "err");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "提交创建";
+      renumber();
+    }
+  });
+
+  renumber();
+  paintFlavorChips("");
+})();
+</script>
+{% endblock %}
