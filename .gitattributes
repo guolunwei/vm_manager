@@ -1,0 +1,7 @@
+# Windows batch files must keep CRLF: cmd.exe mis-parses LF-only multi-line
+# if-blocks and the window closes before any error can be read.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must stay LF or bash reports "bad interpreter".
+*.sh  text eol=lf
