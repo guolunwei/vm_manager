@@ -43,6 +43,7 @@
           <th>发起人</th>
           <th>开始时间</th>
           <th class="right">耗时</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -66,6 +67,12 @@
           <td class="muted">{{ job.created_by.username|default:"系统" }}</td>
           <td class="muted nowrap">{{ job.queued_at|date:"m-d H:i:s" }}</td>
           <td class="right muted">{{ job.duration }}s</td>
+          <td class="right">
+            {% if job.status == 'failed' or job.status == 'canceled' %}
+            <button class="btn btn-xs" data-action="job-retry"
+                    data-url="{% url 'job_retry' job.pk %}">重试</button>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -166,6 +166,23 @@
       return;
     }
 
+    // 重试任务（失败 / 已取消的按原参数再入队一条）
+    const retryBtn = event.target.closest('[data-action="job-retry"]');
+    if (retryBtn) {
+      event.preventDefault();
+      if (!confirm("按原参数重新执行这个任务？会创建一条新任务，原任务的日志保留。")) return;
+      setBusy(retryBtn, true, "重试中…");
+      try {
+        const data = await post(retryBtn.dataset.url, {});
+        toast("已重新入队", "ok");
+        await followJob(data.job_id);
+      } catch (err) {
+        toast(err.message, "err");
+        setBusy(retryBtn, false);
+      }
+      return;
+    }
+
     // 删除
     const deleteBtn = event.target.closest('[data-action="vm-delete"]');
     if (deleteBtn) {

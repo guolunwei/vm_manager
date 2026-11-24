@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-6.0%2B-0c4b33)](https://www.djangoproject.com/)
-[![Tests](https://img.shields.io/badge/tests-233%20passing-2ea043)](#开发)
+[![Tests](https://img.shields.io/badge/tests-244%20passing-2ea043)](#开发)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![VMware](https://img.shields.io/badge/VMware%20Workstation-vmrun-607078)](https://www.vmware.com/)
 
@@ -68,6 +68,7 @@ GitHub 上现成的替代品基本都是脚本或玩具项目，缺少三样真�
 | **NAT 端口转发** | 在网页上增删宿主机端口到虚拟机端口的转发规则与 DHCP 静态绑定，改完自动重启 VMware 网络服务 |
 | **资源趋势图** | 开启采集后 worker 定期进 Guest 采样 CPU / 内存，详情页时序曲线（分钟级粒度，依赖 open-vm-tools，仅 Linux Guest） |
 | **任务完成通知** | 任务失败（或按配置成功也通知）推送到企业微信 / 钉钉群机器人或邮箱 |
+| **任务重试** | 失败 / 已取消的任务一键按原参数重跑（新任务继承类型、参数与去重键，原任务日志保留） |
 | **模板电源管理** | 模板同样是虚拟机，列表里直接开关机并标出运行状态 |
 | **纳管已有虚拟机** | 扫描目录下所有 `.vmx`，自动读规格与网卡信息 |
 | **网络与租约管理** | 自动推断 VMnet 网段，静态地址避开 DHCP 动态池 |
@@ -155,7 +156,7 @@ vm_manager/
 │   ├── web/                   # 页面视图、表单、中间件
 │   ├── api/                   # DRF 序列化器与视图
 │   ├── management/commands/   # serve / worker / vncproxy / bootstrap / sync_vms
-│   └── tests/                 # 单元测试（233 个）
+│   └── tests/                 # 单元测试（244 个）
 ├── templates/                 # 服务端渲染，无前端构建
 ├── static/                    # 手写 CSS + 原生 JS + vendored noVNC
 ├── deploy/                    # systemd unit / Windows 服务说明
@@ -319,6 +320,7 @@ Windows 上也可以直接双击 `start.bat`（内部同样是 `serve`）。
 | 刷新所有 IP | 顶栏「探测 IP」 |
 | 改模板或规格 | 「设置」页 |
 | 看谁做了什么 | 「审计」页 |
+| 重试失败的任务 | 任务列表或任务详情页「重试」，按原参数重新入队 |
 
 ---
 
@@ -365,6 +367,7 @@ curl -s -H "Authorization: Token $TOKEN" \
 | `GET` | `/api/v1/jobs/` | 任务列表 |
 | `GET` | `/api/v1/jobs/{id}/log/?offset=N` | 增量日志 |
 | `POST` | `/api/v1/jobs/{id}/cancel/` | 取消任务 |
+| `POST` | `/api/v1/jobs/{id}/retry/` | 重试失败 / 已取消的任务（返回新 job_id） |
 | `GET` | `/api/v1/host/` | CPU / 内存 / 虚拟机计数 |
 | `GET` | `/api/v1/subnets/` | 子网、网关与 IP 占用 |
 | `GET` | `/api/v1/audit/` | 审计记录 |

@@ -156,6 +156,37 @@ def request_cancel(job_id: int, *, user=None) -> bool:
     return True
 
 
+class NotRetryable(RuntimeError):
+    """任务当前状态不允许重试。"""
+
+
+def retry_job(job: Job, *, user=None) -> Job:
+    """重试一个已失败 / 已取消的任务：复制参数入队一条新任务。
+
+    不复用原任务行——任务日志是排查证据（本项目「失败保留现场」的一贯
+    取法），覆盖写等于销毁证据。新任务通过 ``retried_from`` 记在日志里，
+    原样继承 kind / payload / vm / template / label / 去重键；去重键沿用
+    意味着原任务若还在终态之外有同键任务，入队会正常被拦。
+    """
+    if not job.is_finished:
+        raise NotRetryable("任务还没结束，不用重试")
+    if job.status not in (JobStatus.FAILED, JobStatus.CANCELED):
+        raise NotRetryable("只有失败或已取消的任务可以重试")
+
+    new_job = enqueue(
+        job.kind,
+        payload=dict(job.payload or {}),
+        vm=job.vm,
+        template=job.template,
+        label=job.label,
+        user=user,
+        dedupe_key=job.dedupe_key,
+    )
+    new_job.append_log(f"Retry of job #{job.pk} ({job.get_status_display()})")
+    logger.info("Job #%s retried as #%s", job.pk, new_job.pk)
+    return new_job
+
+
 def pending_count() -> int:
     return Job.objects.filter(status__in=[JobStatus.QUEUED, JobStatus.RUNNING]).count()
 

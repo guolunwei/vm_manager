@@ -946,6 +946,32 @@ def job_cancel(request, pk: int):
     return _json({"ok": True, "job_id": pk})
 
 
+@login_required
+@require_POST
+def job_retry(request, pk: int):
+    """重试失败 / 已取消的任务：按原参数入队一条新任务。"""
+    job = get_object_or_404(Job.objects.select_related("vm", "template"), pk=pk)
+    if job.created_by_id and job.created_by_id != request.user.pk and not request.user.is_staff:
+        return _error("只能重试自己发起的任务", 403)
+    try:
+        new_job = queue.retry_job(job, user=request.user)
+    except queue.NotRetryable as exc:
+        return _error(str(exc), 409)
+    except queue.DuplicateJob as exc:
+        return _error(str(exc), 409)
+
+    request._audited = True
+    AuditEvent.record(
+        actor=request.user,
+        action=AuditAction.API,
+        target=job.vm,
+        target_label=f"重试 #{job.pk} {job.label}".strip(),
+        detail={"kind": job.kind, "new_job": new_job.pk},
+        request=request,
+    )
+    return _json({"ok": True, "job_id": new_job.pk, "retried_from": job.pk})
+
+
 # ---------------------------------------------------------------------------
 # 设置
 # ---------------------------------------------------------------------------

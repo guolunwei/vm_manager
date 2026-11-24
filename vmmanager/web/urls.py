@@ -27,6 +27,7 @@ urlpatterns = [
     path("jobs/", views.jobs_list, name="jobs"),
     path("jobs/<int:pk>/", views.job_detail, name="job_detail"),
     path("jobs/<int:pk>/cancel/", views.job_cancel, name="job_cancel"),
+    path("jobs/<int:pk>/retry/", views.job_retry, name="job_retry"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/templates/<int:pk>/power/", views.template_power, name="template_power"),
     path("settings/templates/<int:pk>/delete/", views.template_delete, name="template_delete"),

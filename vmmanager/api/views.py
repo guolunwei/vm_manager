@@ -521,6 +521,18 @@ class JobViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "任务已结束，无法取消"}, status=status.HTTP_409_CONFLICT)
         return Response({"ok": True})
 
+    @action(detail=True, methods=["post"], url_path="retry")
+    def retry(self, request, pk=None):
+        """重试失败 / 已取消的任务：按原参数入队一条新任务。"""
+        job = self.get_object()
+        try:
+            new_job = queue.retry_job(job, user=request.user)
+        except queue.NotRetryable as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except queue.DuplicateJob as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response({"ok": True, "job_id": new_job.pk, "retried_from": job.pk})
+
 
 class IpLeaseViewSet(viewsets.ModelViewSet):
     queryset = IpLease.objects.select_related("vm").order_by("ip")

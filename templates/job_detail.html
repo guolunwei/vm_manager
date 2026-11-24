@@ -8,6 +8,10 @@
 
 {% block topbar %}
   {% if job.vm %}<a class="btn" href="{% url 'vm_detail' job.vm.pk %}">查看 VM</a>{% endif %}
+  {% if job.status == 'failed' or job.status == 'canceled' %}
+  <button class="btn" data-action="job-retry"
+          data-url="{% url 'job_retry' job.pk %}">重试任务</button>
+  {% endif %}
   {% if not job.is_finished %}
   <button class="btn btn-danger" data-action="job-cancel"
           data-url="{% url 'job_cancel' job.pk %}">取消任务</button>
