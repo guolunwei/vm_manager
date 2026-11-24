@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import re
+import struct
 import subprocess
 from pathlib import Path
 
@@ -65,6 +66,31 @@ def vdiskmanager_path() -> str:
 # ---------------------------------------------------------------------------
 _RW_LINE = re.compile(r"^RW\s+(\d+)\s+(?:FLAT|SPARSE|VMFS|ZERO)", re.IGNORECASE)
 
+#: 文本描述符通常只有几 KB；超过这个大小就按二进制数据盘处理。
+#: 单体 sparse 盘的 .vmdk 本身就是数据文件（可达数 GB），整份读进内存会直接
+#: 撑爆进程——详情页每刷新一次就复现一次。
+_DESCRIPTOR_MAX_BYTES = 256 * 1024
+
+#: 单体 sparse 盘的头部魔数（KDMV），后面紧跟的字段里有精确的虚拟容量。
+_SPARSE_MAGIC = b"KDMV"
+
+
+def _sparse_capacity_bytes(path: Path) -> int:
+    """从单体 sparse 盘头部读虚拟容量（字节），读不到返回 0。
+
+    header 布局：magic(4) version(4) flags(4) capacity(8, 扇区数) ...
+    只读 512 字节，不会把 GB 级的数据盘拖进内存。
+    """
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(512)
+    except OSError:
+        return 0
+    if len(header) < 20 or header[:4] != _SPARSE_MAGIC:
+        return 0
+    sectors = struct.unpack_from("<Q", header, 12)[0]
+    return sectors * 512
+
 
 def disk_capacity_bytes(vmx_path: str) -> int:
     """解析第一块磁盘的虚拟容量（字节）。
@@ -81,18 +107,31 @@ def disk_capacity_bytes(vmx_path: str) -> int:
     if not descriptor.exists():
         return 0
 
-    total_sectors = 0
     try:
-        text = descriptor.read_text(encoding="utf-8", errors="replace")
-        for line in text.splitlines():
-            match = _RW_LINE.match(line.strip())
-            if match:
-                total_sectors += int(match.group(1))
+        descriptor_size = descriptor.stat().st_size
     except OSError:
         return 0
 
+    total_sectors = 0
+    # 只有小文件才可能是文本描述符；单体 sparse 盘跳过解析，直接走下面的
+    # 「按文件大小兜底」分支（对这类盘，文件大小就是虚拟容量的近似下界）。
+    if descriptor_size <= _DESCRIPTOR_MAX_BYTES:
+        try:
+            text = descriptor.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                match = _RW_LINE.match(line.strip())
+                if match:
+                    total_sectors += int(match.group(1))
+        except OSError:
+            return 0
+
     if total_sectors:
         return total_sectors * 512
+
+    # 单体 sparse 盘：头部有精确容量，先读它（512 字节，零成本）
+    sparse = _sparse_capacity_bytes(descriptor)
+    if sparse:
+        return sparse
 
     # 描述符解析不出来：按文件大小兜底（sparse 盘的文件大小 ≈ 已用容量，
     # 只是「至少这么大」的下界，页面上要如实标注）
