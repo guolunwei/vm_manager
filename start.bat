@@ -38,7 +38,7 @@ if /i "%MODE%"=="prod" (
   echo [2/2] Collecting static files...
   set DJANGO_SETTINGS_MODULE=config.settings.prod
   "%PY%" manage.py collectstatic --noinput >nul
-  echo [2/2] Starting Web (waitress) http://%HOSTPORT%
+  echo [2/2] Starting Web ^(waitress^) http://%HOSTPORT%
   "%PY%" -m waitress --listen=%HOSTPORT% config.wsgi:application
 ) else (
   echo Starting Web + worker in this window, Ctrl+C stops both. http://%HOSTPORT%
