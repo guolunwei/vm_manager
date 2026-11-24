@@ -123,26 +123,38 @@ def run_collection(ctx) -> dict:
     if purged:
         ctx.info(f"Purged {purged} samples older than {retention} days")
 
-    # 链式自续：下一轮提前入队，靠 queued_at 的未来时间戳等待
-    interval = max(60, int(settings.VMM.get("METRICS_INTERVAL") or 300))
-    if settings.VMM.get("METRICS_ENABLED"):
-        from vmmanager.jobs import queue
+    return {"collected": collected, "skipped": skipped}
 
-        queue.enqueue(
+
+def chain_next_round() -> bool:
+    """排定下一轮采集（在当前任务到达终态后由 worker 调用）。
+
+    为什么要等终态：dedupe_key 有「未完成任务唯一」的部分索引，任务自己
+    还在 RUNNING 时链式入队会撞上去重（job #48 教训）。worker 在收尾时
+    已释放去重键，这里再入队就干净了。
+
+    双保险：``maybe_enqueue_metrics``（worker 主循环）在链意外丢失时
+    （如 worker 崩溃）也能把采集捡回来，两者都查重不会排重。
+    """
+    if not settings.VMM.get("METRICS_ENABLED"):
+        return False
+
+    from vmmanager.jobs import queue
+
+    interval = max(60, int(settings.VMM.get("METRICS_INTERVAL") or 300))
+    try:
+        next_job = queue.enqueue(
             JobKind.METRICS,
             payload={},
             dedupe_key=DEDUPE_KEY,
             label="指标采集（定时）",
         )
-        # 单独把 queued_at 推到未来：enqueue 默认是 now，claim_next 只抢已到期的
-        from vmmanager.models import Job
-
-        Job.objects.filter(kind=JobKind.METRICS, status=JobStatus.QUEUED, dedupe_key=DEDUPE_KEY).update(
-            queued_at=timezone.now() + timedelta(seconds=interval)
-        )
-        ctx.info(f"Next collection scheduled in {interval}s")
-
-    return {"collected": collected, "skipped": skipped}
+    except queue.DuplicateJob:
+        return False
+    # 单独把 queued_at 推到未来：enqueue 默认是 now，claim_next 只抢已到期的
+    next_job.queued_at = timezone.now() + timedelta(seconds=interval)
+    next_job.save(update_fields=["queued_at"])
+    return True
 
 
 def maybe_enqueue_metrics() -> bool:

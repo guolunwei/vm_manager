@@ -29,10 +29,12 @@ from vmmanager.models import (
     JobKind,
     JobStatus,
     PowerState,
+    QuotaExceeded,
     VirtualMachine,
     VmTemplate,
+    check_quota_for_create,
 )
-from vmmanager.services import batch, collector, metrics, network
+from vmmanager.services import batch, collector, exporter, metrics, network
 
 from .serializers import (
     AuditEventSerializer,
@@ -114,6 +116,19 @@ class VirtualMachineViewSet(viewsets.ModelViewSet):
         name = (data.get("name") or "").strip()
         if not name:
             return Response({"detail": "name 必填"}, status=status.HTTP_400_BAD_REQUEST)
+
+        memory_mb = data.get("memory_mb")
+        if not memory_mb and data.get("flavor"):
+            flavor = Flavor.objects.filter(pk=data.get("flavor")).first()
+            memory_mb = flavor.memory_mb if flavor else None
+        try:
+            memory_mb = int(memory_mb) if memory_mb else 0
+        except (TypeError, ValueError):
+            memory_mb = 0
+        try:
+            check_quota_for_create(request.user, count=1, memory_mb_total=memory_mb)
+        except QuotaExceeded as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         payload = {
             "name": name,
@@ -282,6 +297,15 @@ class VirtualMachineViewSet(viewsets.ModelViewSet):
         name = (request.data.get("name") or "").strip()
         if not name:
             return Response({"detail": "name 必填"}, status=status.HTTP_400_BAD_REQUEST)
+
+        memory_mb = request.data.get("memory_mb") or vm.memory_mb or 0
+        try:
+            check_quota_for_create(request.user, count=1, memory_mb_total=int(memory_mb))
+        except (QuotaExceeded, TypeError, ValueError) as exc:
+            return Response(
+                {"detail": str(exc) if isinstance(exc, QuotaExceeded) else "memory_mb 无效"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return _enqueue(
             request,
             JobKind.CLONE_VM,
@@ -344,6 +368,26 @@ class VirtualMachineViewSet(viewsets.ModelViewSet):
             hours = 24
         series = collector.metric_series(vm, hours=hours)
         return Response({"vm": vm.pk, "hours": hours, "count": len(series), "series": series})
+
+    @action(detail=True, methods=["post"], url_path="export")
+    def export_ova(self, request, pk=None):
+        """导出为 .ova。要求虚拟机关机且宿主装了 ovftool。"""
+        vm = self.get_object()
+        if not (request.user.is_staff or settings.ALLOW_SELF_SERVICE):
+            return Response({"detail": "没有导出权限"}, status=status.HTTP_403_FORBIDDEN)
+        if not exporter.ovftool_path():
+            return Response(
+                {"detail": "ovftool not found; set OVFTOOL in config.ini"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return _enqueue(
+            request,
+            JobKind.EXPORT_OVF,
+            payload={"vm_id": vm.pk},
+            vm=vm,
+            label=f"{vm.name} 导出 OVA",
+            dedupe=f"export:{vm.pk}",
+        )
 
     @action(detail=True, methods=["post"], url_path="reconfigure")
     def reconfigure(self, request, pk=None):

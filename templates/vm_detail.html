@@ -194,6 +194,25 @@
       </div>
 
       <div class="card">
+        <div class="card-head"><h2>导出 OVA</h2></div>
+        <p class="muted small">
+          把整台虚拟机打包成可迁移的 <code>.ova</code> 文件（OVF 格式，可导入
+          ESXi / VirtualBox / 其它 Workstation）。导出到：
+          <code class="path">{{ export_dir }}</code>
+        </p>
+        {% if not ovftool_ok %}
+        <div class="flash flash-warning"><span>未找到 ovftool（VMware Workstation 自带）。安装后重启服务，或在 config.ini 里用 <code>OVFTOOL=</code> 指定路径。</span></div>
+        {% elif vm.is_running %}
+        <div class="flash flash-warning"><span>导出要求虚拟机先关机（保证磁盘数据一致）。请先关机再导出。</span></div>
+        {% endif %}
+        {% if can_create or can_manage %}
+        <button class="btn btn-block" data-action="vm-action" data-op="export-ova"
+                data-url="{% url 'vm_export' vm.pk %}" data-name="{{ vm.name }}"
+                {% if not ovftool_ok or vm.is_running %}disabled{% endif %}>导出为 .ova</button>
+        {% endif %}
+      </div>
+
+      <div class="card">
         <div class="card-head"><h2>修复配置</h2></div>
         <p class="muted small">如果创建时 Guest 尚未就绪、hostname / IP 没配置成功，可以在这里重试。</p>
         <button class="btn btn-block" data-action="vm-action" data-op="reconfigure"

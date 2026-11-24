@@ -289,7 +289,11 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 
 /* 配置类表单并排，窄屏自动堆叠。420px 起步是为了在 1440 屏上只排两列：
    三列会把「更改 IP」这类多字段表单压得太窄，说明文字挤成三行。 */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start; }
+.card-grid { columns: 2; column-gap: 16px; }
+/* 瀑布式双栏：卡片按内容高度自然堆叠，短卡的下一张上移补位，
+   避免 grid 行对齐造成的成片空白。窄屏退化为单栏。 */
+.card-grid > .card { break-inside: avoid; margin-bottom: 16px; }
+@media (max-width: 960px) { .card-grid { columns: 1; } }
 
 .create-layout {
   display: grid;
@@ -1043,3 +1047,6 @@ code.path { font-size: 11.5px; word-break: break-all; color: var(--text-soft); }
 }
 .dot-cpu { background: var(--primary, #2563eb); }
 .dot-mem { background: var(--ok, #12a150); }
+
+/* -- 用户配额表 ------------------------------------------------------------- */
+.quota-table input[type="number"] { width: 100%; padding: 5px 8px; }

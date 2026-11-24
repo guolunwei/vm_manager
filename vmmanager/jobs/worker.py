@@ -29,7 +29,7 @@ from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 
-from vmmanager.models import Job, JobStatus, Worker
+from vmmanager.models import Job, JobKind, JobStatus, Worker
 from vmmanager.services import collector, notify
 
 from . import queue
@@ -197,6 +197,7 @@ class WorkerRunner:
             self.current_job_id = None
             Worker.objects.filter(name=self.name).update(current_job=None, heartbeat_at=timezone.now())
             self._notify(job)
+            self._chain_metrics(job)
             close_old_connections()
 
     @staticmethod
@@ -207,6 +208,21 @@ class WorkerRunner:
             notify.notify_job_finished(job)
         except Exception:  # noqa: BLE001
             logger.exception("Failed to send notification for job #%s", job.pk)
+
+    @staticmethod
+    def _chain_metrics(job: Job) -> None:
+        """指标采集任务结束后排定下一轮（链式自续）。
+
+        必须在终态之后调用：dedupe_key 的部分唯一索引不允许「运行中的自己」
+        和「排队的下一轮」共存（job #48 教训）。失败只记日志，不影响收尾。
+        """
+        if job.kind != JobKind.METRICS:
+            return
+        try:
+            if collector.chain_next_round():
+                job.append_log("Next collection scheduled")
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to chain next metrics round after job #%s", job.pk)
 
 
 def run_forever(*, name: str = "", once: bool = False) -> None:

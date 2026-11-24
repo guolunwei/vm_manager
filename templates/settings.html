@@ -184,6 +184,44 @@
       </form>
       {% endif %}
     </section>
+
+    {% if can_manage %}
+    <section class="card">
+      <div class="card-head">
+        <h2>用户配额</h2>
+        <span class="muted">限制每个账号可创建的虚拟机数量与内存总量，留空 / 0 = 不设限</span>
+      </div>
+      <table class="table quota-table">
+        <thead>
+          <tr>
+            <th>账号</th>
+            <th>当前占用</th>
+            <th style="width:110px">数量上限</th>
+            <th style="width:150px">内存上限（MB）</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in quota_rows %}
+          <tr>
+            <td><strong>{{ row.user.username }}</strong>{% if row.user.is_staff %} <span class="tag">管理员·不受限</span>{% endif %}</td>
+            <td class="muted">{{ row.usage.vms }} 台 · {{ row.usage.memory_mb }} MB</td>
+            <form method="post" action="{% url 'settings' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="quota">
+              <input type="hidden" name="user_id" value="{{ row.user.pk }}">
+              <td><input class="input input-sm" type="number" min="0" name="max_vms"
+                         value="{{ row.quota.max_vms|default_if_none:'' }}" placeholder="不限"></td>
+              <td><input class="input input-sm" type="number" min="0" step="1024" name="max_memory_mb"
+                         value="{{ row.quota.max_memory_mb|default_if_none:'' }}" placeholder="不限"></td>
+              <td><button class="btn btn-sm" type="submit">保存</button></td>
+            </form>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
   </div>
 
   <aside class="detail-side">

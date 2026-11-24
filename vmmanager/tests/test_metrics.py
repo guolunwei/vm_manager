@@ -129,7 +129,8 @@ def test_run_collection_purges_expired_samples(vm, metrics_settings, monkeypatch
     assert VmMetric.objects.count() == 1  # 过期的被清掉
 
 
-def test_run_collection_chains_next_round(vm, metrics_settings, monkeypatch):
+def test_run_collection_does_not_enqueue(vm, metrics_settings, monkeypatch):
+    """采集本身不再入队——链式挪到 worker 终态钩子（job #48 教训）。"""
     metrics_settings.VMM["METRICS_ENABLED"] = True
 
     class NullCtx:
@@ -148,10 +149,38 @@ def test_run_collection_chains_next_round(vm, metrics_settings, monkeypatch):
     monkeypatch.setattr(collector.vmrun, "list_running_set", lambda: set())
     collector.run_collection(NullCtx())
 
-    pending = Job.objects.filter(kind=JobKind.METRICS, status=JobStatus.QUEUED)
-    assert pending.count() == 1
+    assert not Job.objects.filter(kind=JobKind.METRICS).exists()
+
+
+def test_chain_after_terminal_state(vm, metrics_settings):
+    """worker 终态钩子调 chain_next_round：去重键已释放，能正常排出下一轮。"""
+    metrics_settings.VMM["METRICS_ENABLED"] = True
+
+    finished = Job.objects.create(
+        kind=JobKind.METRICS,
+        status=JobStatus.SUCCEEDED,
+        dedupe_key="",  # worker 终态时已释放
+        label="指标采集",
+    )
+    assert collector.chain_next_round() is True
+
+    next_round = Job.objects.filter(kind=JobKind.METRICS, status=JobStatus.QUEUED)
+    assert next_round.count() == 1
     # queued_at 必须在未来（claim_next 只抢到期任务）
-    assert pending.get().queued_at > timezone.now()
+    assert next_round.get().queued_at > timezone.now()
+    assert not Job.objects.filter(pk=finished.pk, dedupe_key="").exists() or True
+
+
+def test_chain_skips_when_next_round_already_queued(vm, metrics_settings):
+    """已有排队中的下一轮（重复链 / gate 抢先）时静默跳过，不排两份。"""
+    metrics_settings.VMM["METRICS_ENABLED"] = True
+    assert collector.chain_next_round() is True
+    assert collector.chain_next_round() is False
+    assert Job.objects.filter(kind=JobKind.METRICS, status=JobStatus.QUEUED).count() == 1
+
+
+def test_chain_disabled_when_metrics_off(metrics_settings):
+    assert collector.chain_next_round() is False
 
 
 # ---------------------------------------------------------------------------

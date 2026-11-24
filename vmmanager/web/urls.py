@@ -20,6 +20,7 @@ urlpatterns = [
     path("vms/<int:pk>/resize/", views.vm_resize, name="vm_resize"),
     path("vms/<int:pk>/clone/", views.vm_clone, name="vm_clone"),
     path("vms/<int:pk>/grow-disk/", views.vm_grow_disk, name="vm_grow_disk"),
+    path("vms/<int:pk>/export/", views.vm_export, name="vm_export"),
     path("vms/<int:pk>/snapshots/create/", views.snapshot_create, name="snapshot_create"),
     path("vms/<int:pk>/snapshots/<str:name>/revert/", views.snapshot_revert, name="snapshot_revert"),
     path("vms/<int:pk>/snapshots/<str:name>/delete/", views.snapshot_delete, name="snapshot_delete"),

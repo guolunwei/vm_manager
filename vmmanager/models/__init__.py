@@ -18,6 +18,7 @@ from .machine import (
     vm_name_validator,
 )
 from .network import IpLease, LeaseKind
+from .quota import QuotaExceeded, UserQuota, check_quota_for_create, describe, usage_for
 
 __all__ = [
     "AuditAction",
@@ -32,12 +33,17 @@ __all__ = [
     "NetworkMode",
     "OsFamily",
     "PowerState",
+    "QuotaExceeded",
     "Snapshot",
     "TimeStampedModel",
+    "UserQuota",
     "VirtualMachine",
     "VmMetric",
     "VmTemplate",
     "Worker",
+    "check_quota_for_create",
+    "describe",
     "hostname_for",
+    "usage_for",
     "vm_name_validator",
 ]

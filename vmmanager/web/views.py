@@ -15,7 +15,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
@@ -34,11 +34,15 @@ from vmmanager.models import (
     JobKind,
     JobStatus,
     PowerState,
+    QuotaExceeded,
+    UserQuota,
     VirtualMachine,
     VmTemplate,
     Worker,
+    check_quota_for_create,
+    usage_for,
 )
-from vmmanager.services import batch, collector, disk, metrics, natconf, network, vmrun, vnc
+from vmmanager.services import batch, collector, disk, exporter, metrics, natconf, network, vmrun, vnc
 
 from .forms import (
     CloneForm,
@@ -305,16 +309,19 @@ def vm_create(request):
                 }
             )
 
-        result = batch.submit(
-            outcome.rows,
-            template=template,
-            user=request.user,
-            clone_type=defaults["clone_type"],
-            deploy_ssh_key=defaults["deploy_ssh_key"],
-            guest_password=defaults["guest_password"],
-            notes=defaults["notes"],
-            templates=templates_map,
-        )
+        try:
+            result = batch.submit(
+                outcome.rows,
+                template=template,
+                user=request.user,
+                clone_type=defaults["clone_type"],
+                deploy_ssh_key=defaults["deploy_ssh_key"],
+                guest_password=defaults["guest_password"],
+                notes=defaults["notes"],
+                templates=templates_map,
+            )
+        except QuotaExceeded as exc:
+            return _error(str(exc))
         result["errors"] = outcome.errors + result["errors"]
 
         if result["jobs"]:
@@ -575,6 +582,10 @@ def vm_detail(request, pk: int):
     except Exception:
         disk_gb = None
 
+    # 导出信息：ovftool 在不在、导出目录在哪（不在页面上创建目录）
+    ovftool_ok = bool(exporter.ovftool_path())
+    export_dir_raw = settings.VMM.get("EXPORT_DIR") or str(Path(settings.VMM["BASE_DIR"]) / "exports")
+
     return render(
         request,
         "vm_detail.html",
@@ -592,6 +603,9 @@ def vm_detail(request, pk: int):
             "clone_form": CloneForm(),
             "grow_disk_form": GrowDiskForm(),
             "disk_gb": disk_gb,
+            "ovftool_ok": ovftool_ok,
+            "export_dir": export_dir_raw,
+            "can_create": _can_create(request.user),
             "snapshot_form": SnapshotForm(),
             "can_manage": request.user.is_staff,
         },
@@ -731,6 +745,10 @@ def vm_clone(request, pk: int):
     name = form.cleaned_data["name"]
     if name.lower() == source.name.lower():
         return _error("新名称不能与源机器相同（Windows 文件系统不区分大小写，会覆盖同一个目录）")
+    try:
+        check_quota_for_create(request.user, count=1, memory_mb_total=source.memory_mb or 0)
+    except QuotaExceeded as exc:
+        return _error(str(exc))
     return _enqueue(
         request,
         JobKind.CLONE_VM,
@@ -768,6 +786,32 @@ def vm_grow_disk(request, pk: int):
         vm=vm,
         label=f"{vm.name} 磁盘扩容",
         dedupe=f"grow_disk:{vm.pk}",
+    )
+
+
+@login_required
+@require_POST
+def vm_export(request, pk: int):
+    """导出虚拟机为 .ova。要求关机；ovftool 未安装时直接给出提示。"""
+    if not _can_create(request.user):
+        return _error("你的账号没有导出虚拟机的权限", 403)
+
+    vm = get_object_or_404(VirtualMachine, pk=pk)
+    if not vm.exists:
+        return _error("这台虚拟机的 vmx 文件已不存在")
+
+    if not exporter.ovftool_path():
+        return _error(
+            "未找到 ovftool（VMware Workstation 自带），无法导出。可在 config.ini 里用 OVFTOOL= 指定路径"
+        )
+
+    return _enqueue(
+        request,
+        JobKind.EXPORT_OVF,
+        payload={"vm_id": vm.pk},
+        vm=vm,
+        label=f"{vm.name} 导出 OVA",
+        dedupe=f"export:{vm.pk}",
     )
 
 
@@ -942,6 +986,33 @@ def settings_view(request):
                 messages.success(request, f"规格 {saved.name} 已保存")
             else:
                 messages.error(request, "规格保存失败：" + _format_errors(form))
+        elif action == "quota":
+            target_user = get_object_or_404(get_user_model(), pk=request.POST.get("user_id", ""))
+
+            def _int_or_zero(raw: str) -> int:
+                raw = (raw or "").strip()
+                return max(0, int(raw)) if raw.isdigit() else 0
+
+            quota_row, _created = UserQuota.objects.update_or_create(
+                user=target_user,
+                defaults={
+                    "max_vms": _int_or_zero(request.POST.get("max_vms")),
+                    "max_memory_mb": _int_or_zero(request.POST.get("max_memory_mb")),
+                },
+            )
+            request._audited = True
+            AuditEvent.record(
+                actor=request.user,
+                action=AuditAction.SETTINGS,
+                target_label=target_user.username,
+                detail={
+                    "type": "quota",
+                    "max_vms": quota_row.max_vms,
+                    "max_memory_mb": quota_row.max_memory_mb,
+                },
+                request=request,
+            )
+            messages.success(request, f"{target_user.username} 的配额已保存（0 = 不设限）")
         return redirect("settings")
 
     edit_template = None
@@ -975,6 +1046,15 @@ def settings_view(request):
             "flavor_form": FlavorForm(instance=edit_flavor),
             "edit_template": edit_template,
             "edit_flavor": edit_flavor,
+            # 配额管理：每个账号一行，带当前占用与上限（0 = 不设限）
+            "quota_rows": [
+                {
+                    "user": user,
+                    "quota": UserQuota.objects.filter(user=user).first(),
+                    "usage": usage_for(user),
+                }
+                for user in get_user_model().objects.filter(is_active=True).order_by("username")
+            ],
             "config": {
                 "base_dir": settings.VMM.get("BASE_DIR"),
                 "vmrun": settings.VMM.get("VMRUN"),

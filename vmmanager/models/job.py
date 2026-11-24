@@ -42,6 +42,7 @@ class JobKind(models.TextChoices):
     GROW_DISK = "grow_disk", "扩容磁盘"
     CLONE_VM = "clone_vm", "克隆虚拟机"
     METRICS = "metrics", "指标采集"
+    EXPORT_OVF = "export_ovf", "导出 OVA"
 
 
 class JobStatus(models.TextChoices):

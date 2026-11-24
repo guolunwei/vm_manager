@@ -25,6 +25,7 @@ from vmmanager.services import (
     clone,
     collector,
     disk,
+    exporter,
     guest,
     inventory,
     network,
@@ -463,3 +464,14 @@ def handle_metrics(job: Job, ctx: JobContext) -> dict:
     也可以从 API 手动触发一轮。
     """
     return collector.run_collection(ctx)
+
+
+@register(JobKind.EXPORT_OVF)
+def handle_export_ovf(job: Job, ctx: JobContext) -> dict:
+    """把虚拟机导出为 .ova（走 ovftool，要求关机）。
+
+    ``EXPORT_DIR`` 未配置时落在 ``BASE_DIR/exports``；导出的绝对路径写进
+    任务结果与日志，页面上可以直接看到文件在哪。
+    """
+    vm = _get_vm(ctx)
+    return exporter.export_ova(vm, ctx)

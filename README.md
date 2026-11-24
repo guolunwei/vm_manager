@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-6.0%2B-0c4b33)](https://www.djangoproject.com/)
-[![Tests](https://img.shields.io/badge/tests-118%20passing-2ea043)](#开发)
+[![Tests](https://img.shields.io/badge/tests-233%20passing-2ea043)](#开发)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![VMware](https://img.shields.io/badge/VMware%20Workstation-vmrun-607078)](https://www.vmware.com/)
 
@@ -63,6 +63,8 @@ GitHub 上现成的替代品基本都是脚本或玩具项目，缺少三样真�
 | **批量操作** | 列表多选虚拟机，一键批量开机 / 关机 / 删除，逐台独立入队互不影响 |
 | **调整规格与扩容** | 已有虚拟机改 vCPU / 内存（自动关机改 vmx 再开机）；磁盘扩容一步到位（`vmware-vdiskmanager` + Guest 内自动扩分区与文件系统） |
 | **完整克隆** | `vmrun clone full` 复制整台虚拟机（含磁盘数据），与链接克隆一样自动完成初始化 |
+| **OVF / OVA 导出** | 用 VMware 自带 `ovftool` 把虚拟机打包成可迁移的 `.ova`，进度实时写任务日志；未装 ovftool 时优雅降级 |
+| **多用户配额** | 按账号限制虚拟机数量与内存总量，创建 / 克隆 / 批量入口统一拦截，设置页可视化管理 |
 | **NAT 端口转发** | 在网页上增删宿主机端口到虚拟机端口的转发规则与 DHCP 静态绑定，改完自动重启 VMware 网络服务 |
 | **资源趋势图** | 开启采集后 worker 定期进 Guest 采样 CPU / 内存，详情页时序曲线（分钟级粒度，依赖 open-vm-tools，仅 Linux Guest） |
 | **任务完成通知** | 任务失败（或按配置成功也通知）推送到企业微信 / 钉钉群机器人或邮箱 |
@@ -153,7 +155,7 @@ vm_manager/
 │   ├── web/                   # 页面视图、表单、中间件
 │   ├── api/                   # DRF 序列化器与视图
 │   ├── management/commands/   # serve / worker / vncproxy / bootstrap / sync_vms
-│   └── tests/                 # 单元测试（118 个）
+│   └── tests/                 # 单元测试（233 个）
 ├── templates/                 # 服务端渲染，无前端构建
 ├── static/                    # 手写 CSS + 原生 JS + vendored noVNC
 ├── deploy/                    # systemd unit / Windows 服务说明
@@ -253,6 +255,8 @@ Windows 上也可以直接双击 `start.bat`（内部同样是 `serve`）。
 | `NOTIFY_ON_SUCCESS` / `NOTIFY_ON_CANCELED` | `0` | 成功 / 取消是否也通知（默认只在失败时通知） |
 | `METRICS_ENABLED` | `0` | 开启 Guest 内资源采集（详情页出现趋势图） |
 | `METRICS_INTERVAL` / `METRICS_RETENTION_DAYS` | `300` / `7` | 采样间隔（秒，最小 60）与样本保留天数 |
+| `OVFTOOL` | 自动探测 | `ovftool.exe` 路径（Workstation 自带，装在默认位置无需配置），OVF 导出用 |
+| `EXPORT_DIR` | `BASE_DIR/exports` | OVA 导出成品目录 |
 | `NAT_CONF` / `DHCP_CONF` | 自动探测 | `vmnetnat.conf` / `vmnetdhcp.conf` 路径，NAT 转发功能用 |
 | `DJANGO_ALLOWED_HOSTS` | `127.0.0.1,localhost` | 生产环境要加自己的域名 |
 
@@ -309,6 +313,8 @@ Windows 上也可以直接双击 `start.bat`（内部同样是 `serve`）。
 | 磁盘扩容 | 详情页「扩容磁盘」，Guest 内自动扩分区与文件系统 |
 | NAT 端口转发 / DHCP 静态绑定 | 「网络」页，改完需管理员权限重启 VMware 网络服务 |
 | 资源趋势图 | 详情页「资源趋势」，先在 config.ini 开启 `METRICS_ENABLED=1` |
+| 导出 OVA | 详情页「导出」，选格式提交任务；要求虚拟机关机且已装 ovftool |
+| 给账号设配额 | 「设置」页「用户配额」卡片，0 表示不设限 |
 | 纳管磁盘上已有的虚拟机 | 顶栏「同步磁盘」 |
 | 刷新所有 IP | 顶栏「探测 IP」 |
 | 改模板或规格 | 「设置」页 |
@@ -353,6 +359,7 @@ curl -s -H "Authorization: Token $TOKEN" \
 | `POST` | `/api/v1/vms/{id}/resize/` | `{"cpus":4,"memory_mb":8192}` |
 | `POST` | `/api/v1/vms/{id}/clone/` | `{"name":"web-02","clone_type":"full\|linked"}` |
 | `POST` | `/api/v1/vms/{id}/grow_disk/` | `{"size_gb":60,"grow_guest":true}` |
+| `POST` | `/api/v1/vms/{id}/export/` | 导出 OVA（要求关机，依赖 ovftool） |
 | `GET` | `/api/v1/vms/{id}/metrics/?hours=24` | Guest 内采集的时序指标 |
 | `GET` | `/api/v1/vms/{id}/snapshots/` | 快照列表 |
 | `GET` | `/api/v1/jobs/` | 任务列表 |
@@ -556,8 +563,8 @@ ruff format .             # 格式化
 - [x] 完整克隆与磁盘扩容（`vmrun clone full` + `vmware-vdiskmanager` + Guest 内扩分区）
 - [x] NAT 端口转发与 DHCP 静态绑定（编辑 vmnetnat.conf / vmnetdhcp.conf，重启服务需管理员权限）
 - [x] 虚拟机资源趋势图（Guest 内采集 CPU / 内存，分钟级粒度，依赖 open-vm-tools，仅 Linux Guest）
-- [ ] 多用户配额与资源池
-- [ ] OVF / OVA 导出（依赖 VMware 自带的 ovftool，且导出时虚拟机需关机）
+- [x] 多用户配额与资源池（按账号限数量与内存总量，创建入口统一拦截）
+- [x] OVF / OVA 导出（依赖 VMware 自带的 ovftool，且导出时虚拟机需关机）
 
 ---
 

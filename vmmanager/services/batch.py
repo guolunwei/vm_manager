@@ -25,6 +25,7 @@ from vmmanager.models import (
     JobKind,
     VirtualMachine,
     VmTemplate,
+    check_quota_for_create,
     vm_name_validator,
 )
 
@@ -260,6 +261,11 @@ def submit(
     jobs: list[dict] = []
     errors: list[dict] = []
     template_map = templates or {}
+
+    # 配额前置校验：整批一起算，超了就整批拒绝——
+    # 拆成「能建的先建」会把一半成功的半吊子结果丢给用户猜。
+    total_memory_mb = sum(row.memory_mb or 0 for row in rows)
+    check_quota_for_create(user, count=len(rows), memory_mb_total=total_memory_mb)
 
     for row in rows:
         row_template = template_map.get(row.template_id, template)

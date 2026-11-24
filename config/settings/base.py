@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import shutil
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -80,6 +81,31 @@ def _split_csv(raw: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # vmrun 探测
 # ---------------------------------------------------------------------------
+def _detect_ovftool() -> str:
+    """OVF 导出工具（VMware Workstation 自带，也可能随 vSphere 客户端安装）。
+
+    找不到就返回空串——导出功能会优雅降级为「页面上提示未安装」，
+    不影响其它功能。
+    """
+    candidates = [
+        # Windows
+        r"D:\Applications\VMware\VMware Workstation\ovftool\ovftool.exe",
+        r"C:\Program Files (x86)\VMware\VMware Workstation\ovftool\ovftool.exe",
+        r"C:\Program Files\VMware\VMware Workstation\ovftool\ovftool.exe",
+        r"C:\Program Files\VMware\ovftool\ovftool.exe",
+        # Linux / macOS
+        "/usr/bin/ovftool",
+        "/usr/local/bin/ovftool",
+        "/Applications/VMware Fusion.app/Contents/Library/ovftool/ovftool",
+    ]
+    for item in candidates:
+        if Path(item).exists():
+            return item
+    # 最后碰碰运气：PATH 里有就能用
+    found = shutil.which("ovftool")
+    return found or ""
+
+
 def _detect_vmrun() -> str:
     candidates = [
         # Windows
@@ -120,6 +146,9 @@ VMM = {
     # 虚拟机存放根目录，「同步磁盘」会扫描它下面一层子目录的 .vmx
     "BASE_DIR": conf("VMM_BASE_DIR", conf("BASE_DIR", _detect_vm_base_dir())),
     "VMRUN": conf("VMM_VMRUN", conf("VMRUN", _detect_vmrun())),
+    # OVF 导出：ovftool 路径（找不到 = 导出功能显示为不可用）与导出目录
+    "OVFTOOL": conf("VMM_OVFTOOL", conf("OVFTOOL", _detect_ovftool())),
+    "EXPORT_DIR": conf("VMM_EXPORT_DIR", conf("EXPORT_DIR", "")),
     # 磁盘扩容工具，与 vmrun 同目录（见 services/disk.py）
     "VDISKMANAGER": conf("VMM_VDISKMANAGER", conf("VDISKMANAGER", "")),
     # 默认模板（bootstrap 首次初始化时使用）

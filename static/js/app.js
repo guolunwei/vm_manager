@@ -145,6 +145,7 @@
       if (label === "stop" && !confirm(`确定关机 ${name}？`)) return;
       if (label === "reset" && !confirm(`确定重启 ${name}？`)) return;
       if (label === "revert" && !confirm(`确定回滚到快照 ${name}？当前状态将丢失。`)) return;
+      if (label === "export-ova" && !confirm(`导出 ${name} 为 .ova？导出耗时取决于磁盘大小，期间请保持虚拟机关机。`)) return;
 
       setBusy(actionBtn, true, "处理中…");
       try {
