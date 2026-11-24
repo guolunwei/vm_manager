@@ -4,7 +4,7 @@
 
 **Web-based management panel for VMware Workstation VMs — provision from a template, get a SSH-ready machine in seconds, control it from your browser.**
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-6.0%2B-0c4b33)](https://www.djangoproject.com/)
 [![Tests](https://img.shields.io/badge/tests-118%20passing-2ea043)](#开发)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
@@ -168,7 +168,7 @@ vm_manager/
 | 项 | 要求 |
 | --- | --- |
 | 宿主机 | Windows 10/11、Linux 或 macOS（装了 VMware Workstation / Player / Fusion） |
-| Python | 3.10+ |
+| Python | 3.12+（Django 6.x 的最低要求） |
 | 模板母机 | 建议 CentOS 7 / Rocky / Ubuntu 等装了 `open-vm-tools` 的 Linux，并已关机 |
 | 权限 | 能执行 `vmrun`，且有权读写虚拟机目录 |
 

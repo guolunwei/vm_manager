@@ -9,3 +9,8 @@ venv/
 .vmrun.lock
 .pytest_cache/
 .ruff_cache/
+
+# Build / packaging artifacts (created by `pip install -e .`)
+*.egg-info/
+build/
+dist/

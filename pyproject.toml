@@ -7,7 +7,7 @@ name = "vmmanager"
 version = "0.2.0"
 description = "Web 控制台：用模板和规格批量管理 VMware Workstation 虚拟机"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "vmmanager contributors" }]
 keywords = ["vmware", "workstation", "vmrun", "virtualization", "django", "homelab"]
@@ -63,7 +63,7 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
