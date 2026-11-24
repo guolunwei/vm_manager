@@ -290,9 +290,44 @@
     }
   }
 
+  // Panel switching inside a page (VM detail). The chosen panel is kept in the
+  // URL hash so a reload lands on the same tab; replaceState keeps tab clicks
+  // out of the back-button history.
+  function initTabs() {
+    document.querySelectorAll("[data-tabs]").forEach((root) => {
+      const tabs = Array.from(root.querySelectorAll("[data-tab]"));
+      const panels = Array.from(root.querySelectorAll("[data-tab-panel]"));
+      if (!tabs.length || !panels.length) return;
+
+      const names = tabs.map((tab) => tab.dataset.tab);
+
+      const activate = (name) => {
+        tabs.forEach((tab) => {
+          const on = tab.dataset.tab === name;
+          tab.classList.toggle("is-active", on);
+          tab.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        panels.forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== name; });
+      };
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          activate(tab.dataset.tab);
+          // Sandboxed iframes and file:// reject replaceState; a failed hash
+          // update must not break the rest of the page init.
+          try { history.replaceState(null, "", `#${tab.dataset.tab}`); } catch (_) { /* ignore */ }
+        });
+      });
+
+      const fromHash = location.hash.slice(1);
+      activate(names.includes(fromHash) ? fromHash : names[0]);
+    });
+  }
+
   window.vmm = { get, post, toast };
 
   document.addEventListener("DOMContentLoaded", () => {
+    initTabs();
     autoRefresh();
     bindBulkBar();
   });

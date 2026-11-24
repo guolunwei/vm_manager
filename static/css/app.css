@@ -238,6 +238,59 @@ h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
 
 .detail-main, .detail-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
+/* ---------------------------------------------------------- 页面内分区 tab
+   详情页按「概览 / 配置 / 快照 / 任务」分区，避免所有卡片堆在一屏里滚不到底。
+   窄屏允许横向滚动，标签不换行。 */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text-soft);
+  padding: 9px 13px 10px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover { color: var(--text); }
+.tab.is-active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+.tab-count {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-grid; place-items: center;
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.tab.is-active .tab-count { color: var(--primary); background: var(--primary-soft); border-color: #cfdcfb; }
+
+.tab-panel { display: flex; flex-direction: column; gap: 16px; }
+.tab-panel[hidden] { display: none; }
+
+/* 基本信息拆两栏：高频字段在左，低频在右 */
+.kv-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 32px; }
+
+/* 配置类表单并排，窄屏自动堆叠。420px 起步是为了在 1440 屏上只排两列：
+   三列会把「更改 IP」这类多字段表单压得太窄，说明文字挤成三行。 */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start; }
+
 .create-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(250px, .8fr);

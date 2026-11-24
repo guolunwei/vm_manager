@@ -30,39 +30,58 @@
 {% endblock %}
 
 {% block content %}
-<div class="detail-layout">
-  <div class="detail-main">
+<div data-tabs>
+  <nav class="tabs" role="tablist" aria-label="虚拟机详情分区">
+    <button type="button" class="tab is-active" data-tab="overview" role="tab" aria-selected="true">概览</button>
+    <button type="button" class="tab" data-tab="config" role="tab" aria-selected="false">配置</button>
+    <button type="button" class="tab" data-tab="snapshots" role="tab" aria-selected="false">
+      快照{% if snapshots %}<span class="tab-count">{{ snapshots|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="tab" data-tab="jobs" role="tab" aria-selected="false">
+      任务{% if jobs %}<span class="tab-count">{{ jobs|length }}</span>{% endif %}
+    </button>
+  </nav>
+
+  {# ------------------------------------------------------------------ 概览 #}
+  <div class="tab-panel" data-tab-panel="overview" role="tabpanel">
     <section class="card">
       <div class="card-head">
         <h2>基本信息</h2>
-        {% if vm.template %}
-        <a class="link" href="{% url 'settings' %}">模板：{{ vm.template.name }}</a>
-        {% endif %}
+        {% if disk_gb %}<span class="muted">磁盘 {{ disk_gb }} GB</span>{% endif %}
       </div>
-      <dl class="kv">
-        <dt>主机名</dt><dd>{{ vm.hostname|default:"—" }}</dd>
-        <dt>IP 地址</dt>
-        <dd>
-          {% if vm.ip_address %}
-            <code class="ip">{{ vm.ip_address }}</code>
-            <button class="btn btn-xs" data-copy="{{ vm.ip_address }}">复制</button>
-          {% else %}
-            <span class="muted">未检测到</span>
+      <div class="kv-split">
+        <dl class="kv">
+          <dt>主机名</dt><dd>{{ vm.hostname|default:"—" }}</dd>
+          <dt>IP 地址</dt>
+          <dd>
+            {% if vm.ip_address %}
+              <code class="ip">{{ vm.ip_address }}</code>
+              <button class="btn btn-xs" data-copy="{{ vm.ip_address }}">复制</button>
+            {% else %}
+              <span class="muted">未检测到</span>
+            {% endif %}
+          </dd>
+          <dt>MAC</dt><dd><code>{{ vm.mac_address|default:"—" }}</code></dd>
+          <dt>规格</dt><dd>{{ vm.cpus }} vCPU · {{ vm.memory_display }}</dd>
+          <dt>模板</dt>
+          <dd>
+            {% if vm.template %}<a class="link" href="{% url 'settings' %}">{{ vm.template.name }}</a>
+            {% else %}—{% endif %}
+          </dd>
+          <dt>克隆方式</dt><dd>{{ vm.get_clone_type_display }}</dd>
+        </dl>
+        <dl class="kv">
+          <dt>创建人</dt><dd>{{ vm.owner.username|default:"—" }}</dd>
+          <dt>创建时间</dt><dd>{{ vm.created_at|date:"Y-m-d H:i" }}</dd>
+          {% if metrics.memory_mb %}
+          <dt>实际占用</dt><dd>{{ metrics.memory_mb }} MB（进程 PID {{ metrics.pid }}）</dd>
           {% endif %}
-        </dd>
-        <dt>MAC</dt><dd><code>{{ vm.mac_address|default:"—" }}</code></dd>
-        <dt>规格</dt><dd>{{ vm.cpus }} vCPU · {{ vm.memory_display }}</dd>
-        <dt>克隆方式</dt><dd>{{ vm.get_clone_type_display }}</dd>
-        <dt>创建人</dt><dd>{{ vm.owner.username|default:"—" }}</dd>
-        <dt>创建时间</dt><dd>{{ vm.created_at|date:"Y-m-d H:i:s" }}</dd>
-        <dt>vmx 路径</dt><dd><code class="path">{{ vm.vmx_path }}</code></dd>
-        {% if metrics.memory_mb %}
-        <dt>实际占用</dt><dd>{{ metrics.memory_mb }} MB（进程 PID {{ metrics.pid }}）</dd>
-        {% endif %}
-        {% if vm.notes %}
-        <dt>备注</dt><dd>{{ vm.notes }}</dd>
-        {% endif %}
-      </dl>
+          {% if vm.notes %}
+          <dt>备注</dt><dd>{{ vm.notes }}</dd>
+          {% endif %}
+          <dt>vmx 路径</dt><dd><code class="path">{{ vm.vmx_path }}</code></dd>
+        </dl>
+      </div>
       {% if not vm.exists %}
       <div class="flash flash-error"><span>vmx 文件已不存在，这条记录可能已过期。</span></div>
       {% endif %}
@@ -96,7 +115,106 @@
       </div>
       {% endif %}
     </section>
+  </div>
 
+  {# ------------------------------------------------------------------ 配置 #}
+  <div class="tab-panel" data-tab-panel="config" role="tabpanel" hidden>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-head"><h2>更改 IP</h2></div>
+        <form method="post" action="{% url 'vm_set_ip' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+          {% csrf_token %}
+          {% for field in set_ip_form %}
+          <label class="field">
+            <span class="field-label">{{ field.label }}</span>
+            {{ field }}
+          </label>
+          {% endfor %}
+          <button class="btn btn-primary btn-block" type="submit">应用</button>
+          <p class="muted small">通过 nmcli 下发，切换后自动 ping 验证。切换过程中短暂断网属正常现象。</p>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>调整规格</h2></div>
+        <form method="post" action="{% url 'vm_resize' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+          {% csrf_token %}
+          {% for field in resize_form %}
+          <label class="field">
+            <span class="field-label">{{ field.label }}</span>
+            {{ field }}
+          </label>
+          {% endfor %}
+          <button class="btn btn-primary btn-block" type="submit">应用规格</button>
+          <p class="muted small">
+            VMware 只在开机时读取规格。运行中的机器会先软关机、写入后再自动开机，
+            期间会短暂停机。
+          </p>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>磁盘扩容</h2></div>
+        {% if disk_gb %}
+        <p class="muted small">当前虚拟磁盘容量约 {{ disk_gb }} GB。</p>
+        {% endif %}
+        {% if vm.clone_type == "linked" %}
+        <div class="flash flash-warning"><span>链接克隆的磁盘与模板共享，无法扩容。请先克隆一台完整副本再扩容。</span></div>
+        {% else %}
+        <form method="post" action="{% url 'vm_grow_disk' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+          {% csrf_token %}
+          {% for field in grow_disk_form %}
+          <label class="field">
+            <span class="field-label">{{ field.label }}</span>
+            {{ field }}
+          </label>
+          {% endfor %}
+          <button class="btn btn-block" type="submit">扩容</button>
+          <p class="muted small">
+            需要先关机。扩完磁盘后会自动开机并尝试在 Guest 内扩展分区（需要 growpart；
+            LVM 布局不支持，需手动处理）。
+          </p>
+        </form>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>克隆这台机器</h2></div>
+        <p class="muted small">完整克隆，磁盘内容（已装的软件、配置）一并带走。克隆后自动改主机名并分配新 IP。</p>
+        <form method="post" action="{% url 'vm_clone' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
+          {% csrf_token %}
+          {% for field in clone_form %}
+          <label class="field">
+            <span class="field-label">{{ field.label }}</span>
+            {{ field }}
+          </label>
+          {% endfor %}
+          <button class="btn btn-block" type="submit">开始克隆</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>修复配置</h2></div>
+        <p class="muted small">如果创建时 Guest 尚未就绪、hostname / IP 没配置成功，可以在这里重试。</p>
+        <button class="btn btn-block" data-action="vm-action" data-op="reconfigure"
+                data-url="{% url 'vm_action' vm.pk 'reconfigure' %}" data-name="{{ vm.name }}">重试配置 hostname / IP</button>
+      </div>
+
+      {% if leases %}
+      <div class="card">
+        <div class="card-head"><h2>IP 历史</h2></div>
+        <ul class="plain-list">
+          {% for lease in leases %}
+          <li><code class="ip">{{ lease.ip }}</code><span class="muted">{{ lease.get_kind_display }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------------ 快照 #}
+  <div class="tab-panel" data-tab-panel="snapshots" role="tabpanel" hidden>
     <section class="card">
       <div class="card-head">
         <h2>快照</h2>
@@ -136,11 +254,14 @@
       <p class="muted">还没有快照。在上方输入名称，创建第一个快照。</p>
       {% endif %}
     </section>
+  </div>
 
+  {# ------------------------------------------------------------------ 任务 #}
+  <div class="tab-panel" data-tab-panel="jobs" role="tabpanel" hidden>
     <section class="card">
       <div class="card-head">
         <h2>任务历史</h2>
-        <a class="link" href="{% url 'jobs' %}?vm={{ vm.pk }}">全部 →</a>
+        <a class="link" href="{% url 'jobs' %}?vm={{ vm.pk }}">查看全部 →</a>
       </div>
       {% if jobs %}
       <ul class="job-list">
@@ -161,98 +282,5 @@
       {% endif %}
     </section>
   </div>
-
-  <aside class="detail-side">
-    <div class="card">
-      <div class="card-head"><h2>更改 IP</h2></div>
-      <form method="post" action="{% url 'vm_set_ip' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
-        {% csrf_token %}
-        {% for field in set_ip_form %}
-        <label class="field">
-          <span class="field-label">{{ field.label }}</span>
-          {{ field }}
-        </label>
-        {% endfor %}
-        <button class="btn btn-primary btn-block" type="submit">应用</button>
-        <p class="muted small">通过 nmcli 下发，切换后自动 ping 验证。切换过程中短暂断网属正常现象。</p>
-      </form>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>调整规格</h2></div>
-      <form method="post" action="{% url 'vm_resize' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
-        {% csrf_token %}
-        {% for field in resize_form %}
-        <label class="field">
-          <span class="field-label">{{ field.label }}</span>
-          {{ field }}
-        </label>
-        {% endfor %}
-        <button class="btn btn-primary btn-block" type="submit">应用规格</button>
-        <p class="muted small">
-          VMware 只在开机时读取规格。运行中的机器会先软关机、写入后再自动开机，
-          期间会短暂停机。
-        </p>
-      </form>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>克隆这台机器</h2></div>
-      <p class="muted small">完整克隆，磁盘内容（已装的软件、配置）一并带走。克隆后自动改主机名并分配新 IP。</p>
-      <form method="post" action="{% url 'vm_clone' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
-        {% csrf_token %}
-        {% for field in clone_form %}
-        <label class="field">
-          <span class="field-label">{{ field.label }}</span>
-          {{ field }}
-        </label>
-        {% endfor %}
-        <button class="btn btn-block" type="submit">开始克隆</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>磁盘扩容</h2></div>
-      {% if disk_gb %}
-      <p class="muted small">当前虚拟磁盘容量约 {{ disk_gb }} GB。</p>
-      {% endif %}
-      {% if vm.clone_type == "linked" %}
-      <div class="flash flash-warning"><span>链接克隆的磁盘与模板共享，无法扩容。请先克隆一台完整副本再扩容。</span></div>
-      {% else %}
-      <form method="post" action="{% url 'vm_grow_disk' vm.pk %}" data-action="submit-job" data-name="{{ vm.name }}">
-        {% csrf_token %}
-        {% for field in grow_disk_form %}
-        <label class="field">
-          <span class="field-label">{{ field.label }}</span>
-          {{ field }}
-        </label>
-        {% endfor %}
-        <button class="btn btn-block" type="submit">扩容</button>
-        <p class="muted small">
-          需要先关机。扩完磁盘后会自动开机并尝试在 Guest 内扩展分区（需要 growpart；
-          LVM 布局不支持，需手动处理）。
-        </p>
-      </form>
-      {% endif %}
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>修复配置</h2></div>
-      <p class="muted small">如果创建时 Guest 尚未就绪、hostname / IP 没配置成功，可以在这里重试。</p>
-      <button class="btn btn-block" data-action="vm-action" data-op="reconfigure"
-              data-url="{% url 'vm_action' vm.pk 'reconfigure' %}" data-name="{{ vm.name }}">重试配置 hostname / IP</button>
-    </div>
-
-    {% if leases %}
-    <div class="card">
-      <div class="card-head"><h2>IP 历史</h2></div>
-      <ul class="plain-list">
-        {% for lease in leases %}
-        <li><code class="ip">{{ lease.ip }}</code><span class="muted">{{ lease.get_kind_display }}</span></li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-  </aside>
 </div>
 {% endblock %}
