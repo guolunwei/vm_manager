@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="icon" href="{% static 'favicon.ico' %}" sizes="32x32">
+  <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+  <link rel="apple-touch-icon" href="{% static 'apple-touch-icon.png' %}">
+  <meta name="theme-color" content="#1d4ed8">
   <link rel="stylesheet" href="{% static 'css/app.css' %}?v={% static_ver 'css/app.css' %}">
 </head>
 <body>
