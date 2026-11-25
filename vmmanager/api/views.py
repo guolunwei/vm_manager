@@ -523,15 +523,15 @@ class JobViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="retry")
     def retry(self, request, pk=None):
-        """重试失败 / 已取消的任务：按原参数入队一条新任务。"""
+        """重试失败 / 已取消的任务：重置原任务状态并重新入队。"""
         job = self.get_object()
         try:
-            new_job = queue.retry_job(job, user=request.user)
+            queue.retry_job(job, user=request.user)
         except queue.NotRetryable as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         except queue.DuplicateJob as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-        return Response({"ok": True, "job_id": new_job.pk, "retried_from": job.pk})
+        return Response({"ok": True, "job_id": job.pk})
 
 
 class IpLeaseViewSet(viewsets.ModelViewSet):

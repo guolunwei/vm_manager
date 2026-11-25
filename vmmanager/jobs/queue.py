@@ -161,30 +161,54 @@ class NotRetryable(RuntimeError):
 
 
 def retry_job(job: Job, *, user=None) -> Job:
-    """重试一个已失败 / 已取消的任务：复制参数入队一条新任务。
+    """原地重试一个已失败 / 已取消的任务：重置状态、重新入队。
 
-    不复用原任务行——任务日志是排查证据（本项目「失败保留现场」的一贯
-    取法），覆盖写等于销毁证据。新任务通过 ``retried_from`` 记在日志里，
-    原样继承 kind / payload / vm / template / label / 去重键；去重键沿用
-    意味着原任务若还在终态之外有同键任务，入队会正常被拦。
+    与 GitHub Actions 的 Re-run、Airflow 的 Clear task 同一思路：任务行
+    本身就是用户追踪的对象，重置同一行比复制新行更直观——同一个任务号
+    从头追到尾，列表里也不会堆出一串重复记录。
+
+    * 旧日志保留，追加「第 N 次重试」分隔线（排查证据不丢）；
+    * error / result / progress / worker 字段全部归零，attempts 重置，
+      否则 reclaim_stale 会因 attempts >= max_attempts 直接判失败；
+    * 去重键沿用。若同名键已有另一条未完成任务（比如用户手动重复点了
+      原动作），会撞部分唯一约束——提前检查并报 DuplicateJob。
     """
     if not job.is_finished:
         raise NotRetryable("任务还没结束，不用重试")
     if job.status not in (JobStatus.FAILED, JobStatus.CANCELED):
         raise NotRetryable("只有失败或已取消的任务可以重试")
 
-    new_job = enqueue(
-        job.kind,
-        payload=dict(job.payload or {}),
-        vm=job.vm,
-        template=job.template,
-        label=job.label,
-        user=user,
-        dedupe_key=job.dedupe_key,
+    if job.dedupe_key:
+        clash = (
+            Job.objects.filter(dedupe_key=job.dedupe_key)
+            .exclude(pk=job.pk)
+            .exclude(status__in=JobStatus.finished())
+            .first()
+        )
+        if clash:
+            raise DuplicateJob(f"该操作已有未完成任务（#{clash.pk}），请等待其完成")
+
+    attempt = job.attempts + 1
+    now = timezone.now()
+    Job.objects.filter(pk=job.pk).update(
+        status=JobStatus.QUEUED,
+        queued_at=now,
+        started_at=None,
+        finished_at=None,
+        worker_id="",
+        heartbeat_at=None,
+        progress=0,
+        error="",
+        result={},
+        cancel_requested=False,
+        attempts=0,
     )
-    new_job.append_log(f"Retry of job #{job.pk} ({job.get_status_display()})")
-    logger.info("Job #%s retried as #%s", job.pk, new_job.pk)
-    return new_job
+    job.refresh_from_db()
+    job.append_log(
+        f"━━━ 第 {attempt} 次重试（由 {getattr(user, 'username', None) or '系统'} 发起） ━━━", "info"
+    )
+    logger.info("Job #%s reset for retry (attempt %s)", job.pk, attempt)
+    return job
 
 
 def pending_count() -> int:

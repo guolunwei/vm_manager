@@ -170,7 +170,7 @@
     const retryBtn = event.target.closest('[data-action="job-retry"]');
     if (retryBtn) {
       event.preventDefault();
-      if (!confirm("按原参数重新执行这个任务？会创建一条新任务，原任务的日志保留。")) return;
+      if (!confirm("重置这个任务并重新执行？状态会回到「排队中」，旧日志保留在下方。")) return;
       setBusy(retryBtn, true, "重试中…");
       try {
         const data = await post(retryBtn.dataset.url, {});

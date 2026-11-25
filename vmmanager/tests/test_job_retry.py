@@ -1,10 +1,17 @@
-"""任务重试：状态校验、参数继承、权限与入口。"""
+"""任务重试：原地重置状态、日志保留、权限与入口。
+
+重试与 GitHub Actions 的 Re-run、Airflow 的 Clear task 同一思路——
+重置同一个任务行，不创建新任务。
+"""
 
 from __future__ import annotations
+
+from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 
 from vmmanager.jobs import queue
 from vmmanager.models import Job, JobKind, JobStatus, VirtualMachine
@@ -13,7 +20,7 @@ User = get_user_model()
 
 
 def make_job(**overrides):
-    """造一条带完整参数的任务，方便验证重试时逐字段继承。"""
+    """造一条带完整参数的已失败任务。"""
     vm, _ = VirtualMachine.objects.get_or_create(
         vmx_path=r"D:\VMs\vm-r\vm-r.vmx",
         defaults={"name": "vm-r", "cpus": 1, "memory_mb": 1024},
@@ -26,6 +33,7 @@ def make_job(**overrides):
         label="vm-r 探测",
         dedupe_key="probe:1",
         error="boom",
+        attempts=1,
     )
     defaults.update(overrides)
     job = Job.objects.create(**defaults)
@@ -37,25 +45,50 @@ def make_job(**overrides):
 # queue.retry_job
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
-def test_retry_failed_job_creates_new_job_with_same_params():
+def test_retry_resets_same_job_row():
     old = make_job()
-    new = queue.retry_job(old)
+    old_id = old.pk
+    retried = queue.retry_job(old)
 
-    assert new.pk != old.pk
-    assert new.kind == old.kind
-    assert new.payload == old.payload
-    assert new.vm == old.vm
-    assert new.label == old.label
-    assert new.dedupe_key == old.dedupe_key
-    assert new.status == JobStatus.QUEUED
-    assert f"Retry of job #{old.pk}" in new.log
+    # 同一行，不是新任务
+    assert retried.pk == old_id
+    retried.refresh_from_db()
+    assert retried.status == JobStatus.QUEUED
+    assert retried.error == ""
+    assert retried.result == {}
+    assert retried.progress == 0
+    assert retried.started_at is None
+    assert retried.finished_at is None
+    assert retried.worker_id == ""
+    assert retried.heartbeat_at is None
+    assert retried.cancel_requested is False
+    # attempts 归零，否则 reclaim_stale 会立刻判失败
+    assert retried.attempts == 0
+
+
+@pytest.mark.django_db
+def test_retry_keeps_params_and_log_with_separator():
+    old = make_job()
+    before_log = old.log
+    retried = queue.retry_job(old)
+    retried.refresh_from_db()
+
+    assert retried.kind == old.kind
+    assert retried.payload == old.payload
+    assert retried.vm == old.vm
+    assert retried.label == old.label
+    assert retried.dedupe_key == old.dedupe_key
+    # 旧日志保留，且追加了重试分隔线
+    assert before_log in retried.log
+    assert "第 2 次重试" in retried.log
 
 
 @pytest.mark.django_db
 def test_retry_canceled_job_allowed():
     old = make_job(status=JobStatus.CANCELED)
-    new = queue.retry_job(old)
-    assert new.status == JobStatus.QUEUED
+    queue.retry_job(old)
+    old.refresh_from_db()
+    assert old.status == JobStatus.QUEUED
 
 
 @pytest.mark.django_db
@@ -70,31 +103,35 @@ def test_retry_rejects_running_and_succeeded():
 
 
 @pytest.mark.django_db
-def test_retry_inherits_dedupe_blocking():
-    """原任务重试后再次失败，用同一去重键时若已有未完成任务要被拦。"""
+def test_retry_rejects_when_same_dedupe_key_active():
+    """同去重键已有另一条未完成任务时不许重试，避免撞唯一约束。"""
     old = make_job()
-    new = queue.retry_job(old)
+    queue.enqueue(JobKind.PROBE_IP, dedupe_key="probe:1", label="重复的")
     with pytest.raises(queue.DuplicateJob):
-        queue.retry_job(old)  # 新任务还在排队，同键再排会被去重拦下
-    assert new.pk
+        queue.retry_job(old)
 
 
 @pytest.mark.django_db
-def test_retry_keeps_original_log_intact():
-    """重试不改写原任务——日志是排查证据。"""
-    old = make_job()
-    before = old.log
+def test_retried_job_can_be_claimed_and_reclaimed():
+    """重试后的任务走正常抢占/回收链路，不受旧 attempts 影响。"""
+    old = make_job(max_attempts=2)
     queue.retry_job(old)
+
+    claimed = queue.claim_next("worker-a")
+    assert claimed is not None and claimed.pk == old.pk
+
+    # 模拟 worker 失联，应被回收重跑而不是直接判失败
+    Job.objects.filter(pk=old.pk).update(heartbeat_at=timezone.now() - timedelta(seconds=999))
+    assert queue.reclaim_stale() == 1
     old.refresh_from_db()
-    assert old.log == before
-    assert old.status == JobStatus.FAILED
+    assert old.status == JobStatus.QUEUED
 
 
 # ---------------------------------------------------------------------------
 # web / api 入口
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
-def test_web_retry_enqueue(client):
+def test_web_retry_resets_and_returns_same_id(client):
     owner = User.objects.create_user(username="jr", password="pw-12345678")
     job = make_job(created_by=owner)
     client.force_login(owner)
@@ -102,8 +139,9 @@ def test_web_retry_enqueue(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"]
-    assert payload["retried_from"] == job.pk
-    assert payload["job_id"] != job.pk
+    assert payload["job_id"] == job.pk
+    job.refresh_from_db()
+    assert job.status == JobStatus.QUEUED
 
 
 @pytest.mark.django_db
